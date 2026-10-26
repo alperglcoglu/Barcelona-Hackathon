@@ -26,12 +26,14 @@ DEFENDING_CODES = {
 
 
 def team_prior(events, n_frames, weight=None):
-    """Per-frame evidence in the same units as features.team_evidence: + home, - away.
+    """Per-frame evidence in the units of the weighted team evidence: + home, - away.
 
     Overlapping phases add up and the sum is clipped to [-weight, weight], so ten overlapping tags
-    of one team count no more than one.
+    of one team count no more than one. The default weight is TAG_TEAM_SHARE of TEAM_WEIGHT, the
+    most a frame of clear tracking control can give. Being relative, it stays weak whatever
+    scale the tuning picks for the tracking evidence.
     """
-    weight = config.TAG_TEAM_WEIGHT if weight is None else weight
+    weight = config.TAG_TEAM_SHARE * config.TEAM_WEIGHT if weight is None else weight
     prior = np.zeros(n_frames)
     for event in events:
         side = event["side"]
