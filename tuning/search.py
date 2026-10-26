@@ -4,10 +4,11 @@
     python -m tuning.search                           # hand-written evidence (methods.state_model)
     python -m tuning.search --method learned          # learned evidence (methods.learned)
     python -m tuning.search --evaluate                # score possession/config.py as it is
+    python -m tuning.search --outer 40 --refine 40    # random search, then a local search
 
 Protocol:
 
-  - Each of the three sample games is degraded twice (sample_data.degrade, fixed seeds) so it
+  - Each of the three sample games is degraded twice (sample_data.degrade, SCENARIOS) so it
     looks like automatic tracking, and scored against labels derived from its event data.
   - Random search in two levels. An outer draw sets the parameters that change the evidence itself
     (EVIDENCE_SPACE), and the per-frame scores are computed once for it. Several inner draws then
@@ -31,10 +32,15 @@ from . import metrics, sample_data
 
 # Params
 CACHE = os.path.join(config.CACHE_DIR, "sample_games_v2.pkl")
-# Every degradation gets its own seed; changing degrade() changes every score below.
-SEEDS = (0, 1)
+# Every game is degraded once per scenario: (seed, share of dead-time ball gaps filled). The two
+# scenarios bracket how often the BAR-ATH tracker sees the ball during stoppages (see
+# sample_data.show_dead_ball). Changing degrade() changes every score below.
+SCENARIOS = ((0, 0.0), (1, 0.5))
+SEEDS = tuple(seed for seed, _ in SCENARIOS)
 N_OUTER = 30
 N_INNER = 12
+N_REFINE = 0
+REFINE_SCALE = 0.3
 SEARCH_SEED = 2027
 
 # Parameter -> (low, high, scale). Log scale for strictly positive sizes.
@@ -81,12 +87,13 @@ def load_games():
 
 
 def degraded_set(games):
-    """[(name, seed, data, halves, gt)] with every game degraded once per seed."""
+    """[(name, seed, data, halves, gt)] with every game degraded once per scenario."""
     out = []
     for name, (data, halves, gt) in sorted(games.items()):
-        for seed in SEEDS:
-            out.append((name, seed, sample_data.degrade(data, np.random.default_rng(seed)),
-                        halves, gt))
+        for seed, dead_visible in SCENARIOS:
+            degraded = sample_data.degrade(data, np.random.default_rng(seed), labels=gt,
+                                           dead_visible=dead_visible)
+            out.append((name, seed, degraded, halves, gt))
     return out
 
 
@@ -138,6 +145,20 @@ def draw(space, rng):
     return params
 
 
+def perturb(params, space, rng, scale=REFINE_SCALE):
+    """A random neighbour of params: each value moved by about `scale` (log or linear), in bounds."""
+    out = {}
+    for key, (low, high, kind) in space.items():
+        value = params[key]
+        if kind == "lin":
+            value = value + rng.normal(0, scale * (high - low) / 2)
+        else:
+            value = float(np.exp(np.log(max(value, 1e-6)) + rng.normal(0, scale)))
+        value = min(max(value, low), high)
+        out[key] = int(round(value)) if kind == "int" else value
+    return out
+
+
 def current(space):
     return {key: getattr(config, key) for key in space}
 
@@ -157,6 +178,8 @@ def main():
     parser.add_argument("--evaluate", action="store_true", help="score config.py as it is")
     parser.add_argument("--outer", type=int, default=N_OUTER)
     parser.add_argument("--inner", type=int, default=N_INNER)
+    parser.add_argument("--refine", type=int, default=N_REFINE,
+                        help="extra evidence draws around the best so far (local search)")
     args = parser.parse_args()
 
     cases = degraded_set(load_games())
@@ -180,6 +203,17 @@ def main():
         best = max(trials, key=lambda t: mean_of(t[1]))
         print("{:>3}/{} evidence draws, best mean spellF1 {:.3f}".format(
             i + 1, args.outer, mean_of(best[1])), flush=True)
+    # Local refinement: random search alone is thin in 13 dimensions, so the second phase draws
+    # neighbours of the best configuration so far, for both the evidence and the decode parameters.
+    for i in range(args.refine):
+        best = max(trials, key=lambda t: mean_of(t[1]))[0]
+        evidence = perturb(best, space, rng)
+        scores = raw_scores(args.method, evidence, cases)
+        for _ in range(args.inner):
+            decode = perturb(best, DECODE_SPACE, rng)
+            trials.append((dict(evidence, **decode), decode_score(scores, decode, cases)))
+        print("{:>3}/{} refinement draws, best mean spellF1 {:.3f}".format(
+            i + 1, args.refine, mean_of(max(trials, key=lambda t: mean_of(t[1]))[1])), flush=True)
 
     games = sorted(base[0])
     ranked = sorted(trials, key=lambda t: -mean_of(t[1]))

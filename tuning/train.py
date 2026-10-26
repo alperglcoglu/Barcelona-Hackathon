@@ -41,8 +41,8 @@ def fit(cases):
                      features=list(learned.TEAM_FEATURES)),
         "dead": dict(learned.fit_logistic(np.concatenate(dead_X), np.concatenate(dead_y), L2),
                      features=list(learned.DEAD_FEATURES)),
-        "trained_on": "Metrica sample games 1-3, degraded by tuning/sample_data.degrade, seeds {}"
-                      .format(list(search.SEEDS)),
+        "trained_on": "Metrica sample games 1-3, degraded by tuning/sample_data.degrade, scenarios {}"
+                      .format(list(search.SCENARIOS)),
     }
 
 
