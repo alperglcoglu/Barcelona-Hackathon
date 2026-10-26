@@ -18,10 +18,11 @@ Why this and not a smoothing window:
     nothing to any state, so the model simply stays where it was. That is the challenge's own
     rule for loose and contested balls.
 
-The penalties are in units of "frames of full evidence". With SWITCH = 10, a hand-over that sticks
-needs the equivalent of 10 frames (0.4 s) of the other team clearly controlling a calm ball. A
-short spell by the other team in the middle of a possession costs two switches, so it survives
-only with more than 2 x SWITCH (20 frames, 0.8 s) of evidence. A touch or a deflection does not.
+The penalties are in the same units as the weighted per-frame evidence. With the tuned values in
+config.py (SWITCH_COST 19.3, TEAM_WEIGHT 3.9) a hand-over that sticks needs about 5 frames of the
+other team clearly controlling a calm ball. A short spell by the other team in the middle of a
+possession costs two switches, so it survives only with about twice that. A touch or a deflection
+does not.
 """
 
 import numpy as np
