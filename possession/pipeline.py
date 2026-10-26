@@ -14,13 +14,13 @@ import sys
 
 import numpy as np
 
-from . import config, io_atd, methods, submission
+from . import config, io_atd, io_tagging, methods, submission
 
 sys.path.insert(0, config.ROOT)
 from games import GAME, source_frames  # noqa: E402
 
 # Params
-DEFAULT_METHOD = "baseline"
+DEFAULT_METHOD = "state_model"
 BASELINE_REFERENCE = os.path.join(config.RESULTS_DIR, "baseline_smooth50.csv")
 
 
@@ -51,6 +51,8 @@ def main(argv=None):
     parser.add_argument("--out", help="output CSV (default: evaluation/results/<team>.csv)")
     parser.add_argument("--data-dir", help="data bundle location (default: ./data or MTAH_DATA_DIR)")
     parser.add_argument("--no-cache", action="store_true", help="re-parse the tracking")
+    parser.add_argument("--no-tagging", action="store_true",
+                        help="ignore the Smart Tagging (ablation: tracking only)")
     parser.add_argument("--check-baseline", action="store_true",
                         help="only verify the loader against the organisers' baseline file")
     args = parser.parse_args(argv)
@@ -59,7 +61,11 @@ def main(argv=None):
     if args.check_baseline:
         return 0 if check_baseline(data) else 1
 
-    labels = methods.METHODS[args.method](data)
+    method = methods.METHODS[args.method]
+    if args.method in methods.USES_TAGGING and not args.no_tagging:
+        labels = method(data, io_tagging.load(GAME, args.data_dir))
+    else:
+        labels = method(data)
     reason = submission.check(labels, source_frames("tactical", GAME))
     if reason:
         print("FAIL  {}".format(reason))

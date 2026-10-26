@@ -108,3 +108,87 @@ def test_submission_roundtrip(tmp_path):
     path = submission.write(str(tmp_path / "s.csv"), labels)
     assert open(path).readline() == "frame,label\n"
     assert np.array_equal(submission.read(path), labels)
+
+
+# -- state model -----------------------------------------------------------------------------
+
+from possession import features, hmm, tagging_prior  # noqa: E402
+
+# Fixed costs, so these tests pin down the decoder's behaviour rather than the tuned values.
+COST = hmm.transition_costs(10.0, 25.0, 25.0)
+
+
+def _scores(team, dead):
+    team, dead = np.asarray(team, float), np.asarray(dead, float)
+    return np.stack([team / 2, -team / 2, dead], axis=1)
+
+
+def _decode(team, dead):
+    return "".join(hmm.LETTERS[hmm.viterbi(_scores(team, dead), COST)])
+
+
+def test_viterbi_ignores_flicker_and_places_switch_on_time():
+    team = np.r_[np.ones(100), -np.ones(100)]
+    team[40:45] = -1                                  # 5 frames of the other team: a touch
+    out = _decode(team, -np.ones(200))
+    assert out == "H" * 100 + "A" * 100
+
+
+def test_viterbi_keeps_short_clear_possession():
+    team = np.r_[np.ones(100), -np.ones(30), np.ones(100)]
+    out = _decode(team, -np.ones(230))
+    assert out == "H" * 100 + "A" * 30 + "H" * 100
+
+
+def test_no_evidence_keeps_last_possessor():
+    team = np.r_[np.ones(50), np.zeros(300), -np.ones(50)]   # ball lost / in flight in between
+    out = _decode(team, -np.ones(400))
+    assert out[:50] == "H" * 50 and out[-40:] == "A" * 40 and set(out[50:300]) == {"H"}
+
+
+def test_dead_spell():
+    team = np.r_[np.ones(100), np.zeros(200), -np.ones(100)]
+    dead = np.r_[-np.ones(100), np.ones(200), -np.ones(100)]
+    out = _decode(team, dead)
+    assert out == "H" * 100 + "D" * 200 + "A" * 100
+
+
+def test_interpolate_ball_bridges_short_gaps_only():
+    ball = np.full((40, 2), np.nan)
+    ball[0], ball[5], ball[30] = (0, 0), (5, 10), (5, 10)
+    out = features.interpolate_ball(ball, max_gap=12)
+    assert out[2] == pytest.approx([2, 4])           # 4-frame gap filled linearly
+    assert np.isnan(out[10]).all()                    # 24-frame gap left missing
+    assert np.isnan(out[35]).all()                    # after the last sighting: no extrapolation
+
+
+def test_team_evidence_sign_and_flight():
+    team = np.array([0, 1], dtype=np.int8)
+    ball = np.array([[10.0, 10.0], [10.0, 10.0], [50.0, 30.0], [np.nan, np.nan]])
+    players = np.array([
+        [[10.3, 10.0, 1.0], [14.0, 10.0, 1.0]],      # home on the ball
+        [[14.0, 10.0, 1.0], [10.2, 10.0, 1.0]],      # away on the ball
+        [[10.0, 10.0, 1.0], [80.0, 10.0, 1.0]],      # ball far from everyone
+        [[10.0, 10.0, 1.0], [80.0, 10.0, 1.0]],      # ball missing
+    ])
+    e = features.team_evidence(ball, players, team)
+    assert e[0] > 0.5 and e[1] < -0.5 and abs(e[2]) < 1e-6 and e[3] == 0
+
+
+def test_dead_evidence_out_of_play_and_slow_players():
+    pitch = np.array(PITCH)
+    n = 60
+    ball = np.tile([50.0, 30.0], (n, 1))
+    ball[50:] = (-3.0, 30.0)                          # over the goal line
+    players = np.zeros((n, 4, 3))
+    players[:, :, 2] = np.r_[np.full(30, 4.0), np.full(30, 0.5)][:, None]
+    g = features.dead_evidence(ball, players, pitch)
+    assert g[5] < 0 < g[45] < g[55]
+
+
+def test_tagging_prior_signs():
+    events = [{"code": "BUILD UP", "side": "H", "start_frame": 0, "end_frame": 5},
+              {"code": "DEFENDING IN MIDDLE THIRD", "side": "H", "start_frame": 5, "end_frame": 10},
+              {"code": "SET PIECES", "side": None, "start_frame": 10, "end_frame": 12}]
+    prior = tagging_prior.team_prior(events, 12, weight=1.0)
+    assert (prior[:5] == 1).all() and (prior[5:10] == -1).all() and (prior[10:] == 0).all()
