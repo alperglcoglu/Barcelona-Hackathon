@@ -47,7 +47,7 @@ minus away closeness, in [-1, 1]. It behaves correctly in the three situations t
 A fast ball is discounted by `1 / (1 + (v / v₀)²)`. A ball passing a player at 20 m/s is a pass
 going by or a deflection, not control, and CHALLENGE.md says neither changes possession.
 
-**Evidence of a dead ball** (`features.dead_evidence`) is a log-odds score from two signals that
+**Evidence of a dead ball** (`features.dead_evidence`) is a log-odds score from three signals that
 cover each other's blind spots:
 
 - *The ball is visibly beyond a line* (with a 0.5 m margin for tracking noise). Decisive, but the
@@ -55,10 +55,21 @@ cover each other's blind spots:
 - *The players have stopped running.* During a stoppage twenty-two players walk. The mean speed of
   all tracked players, averaged over ±1 s, enters linearly around a pivot speed. This signal never
   needs the ball, which matters because the ball is missing on 41% of graded frames.
+- *The ball has been missing for a long time* (`features.long_gap`). Every frame inside a run of
+  at least `DEAD_GAP_MIN` = 30 missing frames (1.2 s) gets `DEAD_GAP_SCORE` of dead evidence. The
+  reason is how the automatic tracking loses the ball. On the whole BAR-ATH match (aggregate
+  statistics only, no labels, `possession/diagnose.py`) the ball is missing on 40.7% of graded
+  frames but in only 150 gaps, with a median length of 268 frames (10.7 s). These are not short
+  occlusions in open play. They are mostly the ball leaving the camera's view or being picked up
+  for a restart. In the public five minutes, used here only as a sanity check, the ball is missing
+  on 6.5% of in-play frames and on 33.6% of dead-ball frames. Metrica's sample games show the same
+  pattern naturally (32-41% missing, 155-169 gaps, median 127-196 frames).
 
-**Missing ball** (`features.interpolate_ball`). Gaps up to about one second are bridged with a
-straight line, because the ball cannot travel far unseen in that time. Longer gaps stay missing
-and contribute no team evidence, so the model holds its state through them.
+**Missing ball** (`features.interpolate_ball`). Gaps up to `BALL_MAX_GAP` = 4 frames are bridged
+with a straight line, because the ball cannot travel far unseen in that time. Longer gaps stay
+missing and contribute no team evidence, so the team state holds through them, while the long-gap
+signal above pushes toward `D`. The search preferred a short bridge: bridging long gaps would
+invent ball positions exactly where the ball is out of play.
 
 **Smart Tagging** (`tagging_prior.py`) adds weak team evidence: an attacking phase says its team
 has the ball, and a defending phase says the other team does. Its weight is small, so a phase can
@@ -86,9 +97,9 @@ The halves are decoded separately, and frames outside the halves are written as 
 `learned.py` replaces the hand-written evidence with two logistic regressions, trained on other
 games (section 3). They add collective features that never need the ball: team spread, centroid
 velocity along the attacking direction (read off the data per half), and the speed difference
-between the teams. With penalties tuned for it, it reached a mean spellF1 of about
-0.57, below the hand-written evidence (0.60), and that figure is even flattering, because the
-model had seen every game. The collective features do carry signal: the possessing team is more
+between the teams. With penalties tuned for it, it reached a mean spellF1 of about 0.57 under the
+earlier degradation, below the hand-written evidence. Under the current degradation and the
+current penalties, leave-one-game-out gives 0.533, against 0.635 for the hand-written evidence. The collective features do carry signal: the possessing team is more
 spread out, and the defending team runs faster. But the event-derived labels are coarse, and in the
 sample data "ball missing" mostly means "ball out of play", which a learned model exploits and
 which would not transfer to BAR-ATH, so we removed it as a feature. We keep the hand-written
@@ -136,9 +147,13 @@ come from corrected tracking, ours from events. The labels are good enough to si
 to compare model variants, and they are not used to claim anything about BAR-ATH.
 
 **Degradation.** The sample tracking is cleaner than the automatic BAR-ATH tracking, so before
-tuning each game is degraded (`sample_data.degrade`): ball removed in bursts until about 41% of
-frames are missing, slowly drifting position error, and short player-track dropouts. Without this,
-the parameters would be tuned on cleaner data than they meet.
+tuning each game is degraded (`sample_data.degrade`): slowly drifting position error (noise
+smoothed over 15 frames) and short player-track dropouts. An earlier version also removed the
+ball in short bursts until about 41% of frames were missing. The aggregate gap statistics of
+BAR-ATH (section 1.2) showed that this was wrong: the sample games already have the same share of
+missing ball, in the same few long gaps, so no extra ball dropout is added. Calibrating the noise
+on unlabeled aggregates of the target match is allowed; tuning on its labels is not, and is not
+done.
 
 **Protocol.** A seeded random search over the parameters in `possession/config.py`, with mean
 spellF1 over the three games as the objective. Generalisation is estimated **leave-one-game-out**:
@@ -148,13 +163,16 @@ the best configuration on two games is scored on the third.
 
 | method | game 1 | game 2 | game 3 | mean |
 |---|---|---|---|---|
-| official baseline, ±50-frame window | 0.348 / 0.744 | 0.362 / 0.769 | 0.348 / 0.803 | 0.353 / 0.772 |
-| hand evidence, untuned starting values | 0.558 / 0.806 | 0.581 / 0.769 | 0.473 / 0.818 | 0.537 / 0.798 |
-| **hand evidence, tuned (`config.py`)** | **0.606** / 0.825 | **0.631** / 0.815 | **0.552** / 0.826 | **0.596** / 0.822 |
+| official baseline, ±50-frame window | 0.364 / 0.753 | 0.362 / 0.769 | 0.365 / 0.803 | 0.364 / 0.775 |
+| hand evidence, previous tuning, no long-gap signal | 0.617 / 0.819 | 0.631 / 0.804 | 0.534 / 0.846 | 0.594 / 0.823 |
+| **hand evidence, tuned with long-gap signal (`config.py`)** | **0.656** / 0.861 | **0.674** / 0.839 | **0.576** / 0.879 | **0.635** / 0.860 |
 
-Leave-one-game-out, where the configuration is chosen on the other two games, gives 0.607, 0.578
-and 0.554, a **mean held-out spellF1 of 0.580**. The small gap to the in-sample 0.596 says that the
-tuned values are not overfitted to particular games.
+The long-gap signal is worth about +0.04 spellF1 and +0.04 macroF1 on the same data, most of it
+from better dead-ball detection. Leave-one-game-out, where the configuration is chosen on the
+other two games, gives 0.635, 0.674 and 0.579, a **mean held-out spellF1 of 0.629**. The small gap
+to the in-sample 0.635 says that the tuned values are not overfitted to particular games. One
+caution: the same evidence parameters won in all three folds, so the folds differ only in the
+transition penalties.
 
 These numbers are on other games with event-derived labels, so they are not a prediction of the
 BAR-ATH score. They do measure what each design choice is worth, under the same noise and the same
@@ -172,8 +190,9 @@ metric.
 - **Touches and deflections.** A fast ball counts for less, and a short excursion by the other
   team must pay two switches. Both mechanisms keep a deflection or a single touch from splitting a
   possession.
-- **Dead ball.** The ball beyond a line, or players clearly slowing down, for long enough to pay
-  `TO_DEAD`. Who restarts is not asked: a dead ball is `D`.
+- **Dead ball.** The ball beyond a line, players clearly slowing down, or the ball lost by the
+  tracking for more than about a second, for long enough to pay `TO_DEAD`. Leaving a stoppage is
+  expensive (`FROM_DEAD` = 22), so a restart is declared only once play has clearly resumed. Who restarts is not asked: a dead ball is `D`.
 
 ## 5. Limitations
 
@@ -182,8 +201,9 @@ metric.
 - **Simulated noise.** The degradation is a model of the automatic tracking, calibrated on the
   aggregate figures in DATA.md (and on `diagnose.py`'s aggregate statistics). It does not
   reproduce identity switches or duplicated tracks.
-- **Long ball gaps.** During gaps of several seconds the model holds its state, and a change of
-  possession inside the gap is placed when the ball reappears, which is late.
+- **Long ball gaps.** A long gap is read as a likely stoppage. A long gap in open play (the ball
+  hidden in a crowd, or the camera lagging) can therefore be labelled `D` wrongly, and a change of
+  possession inside it is placed only when the ball reappears.
 - **No video.** A ball detector on the tactical video could fill some of the 41% of missing ball
   frames, and that is the clearest next step.
 

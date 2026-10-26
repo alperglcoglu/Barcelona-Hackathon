@@ -37,27 +37,30 @@ BASELINE_WINDOW = 50
 # here, rounded. Nothing is fitted to BAR-ATH. Values marked [fixed] were set by reasoning and not
 # searched. Distances are metres, speeds m/s, times frames.
 
-# [tuned] Ball gaps up to this long are bridged with a straight line (21 frames is 0.84 s).
-BALL_MAX_GAP = 21
+# [tuned] Ball gaps up to this long are bridged with a straight line (4 frames is 0.16 s). Longer
+# gaps stay missing: in this data they are mostly stoppages (see DEAD_GAP_MIN).
+BALL_MAX_GAP = 4
 # [fixed] Ball positions are averaged over +/- this many frames before differencing into a speed.
 BALL_SPEED_SMOOTH = 2
 
-# [tuned] Control: a player's "closeness" to the ball is exp(-d^2 / 2 sigma^2). At 1.0 m that gives
-# about 0.6 at 1 m (on the ball) and practically 0 at 3 m (marking distance, not control).
-CONTROL_SIGMA = 1.0
-# [tuned] A ball at this speed counts half as much as a ball at rest. A ball going past at 20 m/s
-# counts about 12% as much, which keeps deflections from flipping possession.
-CONTROL_BALL_SPEED = 7.2
+# [tuned] Control: a player's "closeness" to the ball is exp(-d^2 / 2 sigma^2). At 0.74 m that gives
+# about 0.4 at 1 m (on the ball) and practically 0 at 2.5 m (marking distance, not control).
+CONTROL_SIGMA = 0.74
+# [tuned] A ball at this speed counts half as much as a ball at rest. The tuned value is high, so
+# only very fast balls (long passes, shots) are discounted much.
+CONTROL_BALL_SPEED = 26.0
 
 # Dead ball: a pivot on the players' mean speed. Above the pivot counts toward alive, below it
 # toward dead. In the sample games the median is about 2 m/s in play and about 1 m/s in stoppages.
 SPEED_SMOOTH = 25          # [fixed] +/- 1 s moving mean of the players' mean speed
-DEAD_SPEED_PIVOT = 1.8     # [tuned] m/s
-DEAD_SPEED_WEIGHT = 0.35   # [tuned] log-odds per m/s below the pivot
-DEAD_SPEED_CLIP = 0.8      # [tuned] cap on one frame's speed evidence, either way
+DEAD_SPEED_PIVOT = 1.03    # [tuned] m/s
+DEAD_SPEED_WEIGHT = 1.43   # [tuned] log-odds per m/s below the pivot
+DEAD_SPEED_CLIP = 0.89     # [tuned] cap on one frame's speed evidence, either way
 DEAD_NO_PLAYERS = 1.0      # [fixed] no players tracked at all (camera off the pitch): lean dead
 OUT_MARGIN = 0.5           # [fixed] metres beyond a line before the ball counts as out
 DEAD_OUT_SCORE = 3.0       # [fixed] ball visibly out of play: strong, per frame
+DEAD_GAP_MIN = 30          # [tuned] a ball gap at least this long (frames) counts as a stoppage
+DEAD_GAP_SCORE = 2.94      # [tuned] dead-ball evidence per frame inside such a gap
 
 # [fixed] Weak team evidence from the Smart Tagging phases, per frame, added after TEAM_WEIGHT. The
 # sample games have no Smart Tagging, so this cannot be tuned. 0.6 makes a 4-second phase worth
@@ -66,14 +69,15 @@ DEAD_OUT_SCORE = 3.0       # [fixed] ball visibly out of play: strong, per frame
 TAG_TEAM_WEIGHT = 0.6
 
 # [tuned] Transition penalties, in the same units as the weighted evidence (see hmm.py). With
-# TEAM_WEIGHT 3.9 a hand-over needs about 5 frames of clear control (19.3 / 3.9), and a short
-# possession by the other team inside ours needs about 10.
-SWITCH_COST = 19.3         # H <-> A
-TO_DEAD_COST = 14.0        # alive -> D
-FROM_DEAD_COST = 9.8       # D -> alive
+# TEAM_WEIGHT 0.32 a hand-over needs about 9 frames of full control evidence (2.74 / 0.32), and a
+# short possession by the other team inside ours needs about 17 (2 x 2.74 / 0.32). Leaving a dead
+# ball is expensive (22.0), so a restart is only declared once play has clearly resumed.
+SWITCH_COST = 2.74         # H <-> A
+TO_DEAD_COST = 4.54        # alive -> D
+FROM_DEAD_COST = 22.0      # D -> alive
 # [tuned] Scale of the team evidence and of the dead-ball evidence.
-TEAM_WEIGHT = 3.9
-DEAD_WEIGHT = 0.9
+TEAM_WEIGHT = 0.32
+DEAD_WEIGHT = 0.72
 
 # -- learned evidence (methods.learned, possession/learned.py) ---------------------------------
 # A single frame's log-odds is clipped to this, so no one frame can force a change of state alone.

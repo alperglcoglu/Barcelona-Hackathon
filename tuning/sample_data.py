@@ -256,19 +256,24 @@ def _smooth_noise(rng, shape, std, width=JITTER_WIDTH):
     return smooth * std
 
 
-def degrade(data, rng, ball_missing=0.41, mean_gap=20, jitter=0.3, slot_dropout=0.04):
+def degrade(data, rng, ball_missing=None, mean_gap=20, jitter=0.3, slot_dropout=0.04):
     """A copy of data made to look like automatic, uncorrected tracking.
 
-    The sample tracking is cleaner than the competition ATD. This adds what the competition data is
-    documented to have: the ball lost on about 41% of frames in bursts (geometric lengths, mean
-    `mean_gap` frames), slowly drifting positional error, and short dropouts of player tracks. It is a crude model,
-    and its point is that parameters are not tuned on cleaner data than they will meet.
+    Adds slowly drifting positional error and short dropouts of player tracks, so parameters are not
+    tuned on cleaner positions than they will meet.
+
+    **The ball is left as it is by default.** possession/diagnose.py, run on the whole graded
+    BAR-ATH match with no ground truth involved, found the ball missing on 40.7% of frames in only
+    150 gaps with a median length of 268 frames: long stretches, not short occlusions. The sample
+    games already look like that on their own (32-41% missing, 155-169 gaps, median 127-196
+    frames), so no extra ball dropout is added. `ball_missing` (a target share) and `mean_gap` can
+    still add short bursts, to test robustness to a worse tracker.
     """
     ball = data["ball"].copy()
     players = data["players"].copy()
     n = len(ball)
     already = np.isnan(ball[:, 0]).mean()
-    target = max(0.0, ball_missing - already)
+    target = max(0.0, ball_missing - already) if ball_missing is not None else 0.0
     if target > 0:
         # Alternating renewal process: missing bursts of mean `mean_gap`, visible runs sized to hit
         # the target share of missing frames.
