@@ -70,6 +70,70 @@ def shape(labels):
     return len(spells), float(np.mean(spells)), float(np.median(spells)), dead_share
 
 
+def tracking_noise(data, mask):
+    """Lines of unlabeled noise statistics over the frames in mask.
+
+    The same function runs on BAR-ATH here and on the sample games in tuning/noise.py, so the
+    simulated degradation can be matched to the real tracking number by number.
+    """
+    ball, players = data["ball"], data["players"]
+    visible = mask & ~np.isnan(ball[:, 0])
+    nearest = np.min(np.where(np.isnan(players[:, :, 0]), np.inf, np.hypot(
+        players[:, :, 0] - ball[:, None, 0], players[:, :, 1] - ball[:, None, 1])), axis=1)
+    nearest = np.where(np.isfinite(nearest), nearest, np.nan)
+    # Second difference: how far a position is from the midpoint of its neighbours. Real motion is
+    # smooth over 40 ms, so this is mostly tracking jitter.
+    def jitter(xy):
+        out = np.full(xy.shape[:-1], np.nan)
+        out[1:-1] = np.hypot(*np.moveaxis(xy[1:-1] - (xy[:-2] + xy[2:]) / 2, -1, 0))
+        return out
+    ball_jitter = jitter(ball)
+    player_jitter = jitter(players[:, :, :2])
+    speed = features.ball_speed(ball)
+    return [
+        "  nearest player to ball (m)   " + quantiles(nearest[visible]),
+        "  ball speed (m/s)             " + quantiles(speed[visible]),
+        "  ball jitter (cm)             " + quantiles(100 * ball_jitter[visible]),
+        "  player jitter (cm)           " + quantiles(100 * player_jitter[mask].ravel()),
+        "  player speed column (m/s)    " + quantiles(players[mask, :, 2].ravel()),
+    ]
+
+
+def error_breakdown(labels, gt, window, ball, team):
+    """Where a method's mistakes sit in the public window, as counts and rates only."""
+    alive = window & np.isin(gt, ("H", "A"))
+    missing = np.isnan(ball[:, 0])
+    informative = np.abs(team) > 0.3
+    since_dead = np.full(len(gt), 10 ** 6)
+    last = -10 ** 6
+    for f in range(len(gt)):
+        if gt[f] == "D":
+            last = f
+        since_dead[f] = f - last
+    groups = [
+        ("ball visible", alive & ~missing), ("ball missing", alive & missing),
+        ("team evidence |e|>0.3", alive & informative), ("no team evidence", alive & ~informative),
+        ("< 5 s after a stoppage", alive & (since_dead < 125)),
+        (">= 5 s after a stoppage", alive & (since_dead >= 125)),
+    ]
+    lines = []
+    for name, mask in groups:
+        n = mask.sum()
+        if not n:
+            continue
+        right = np.mean(labels[mask] == gt[mask])
+        wrong_team = np.mean(np.isin(labels[mask], ("H", "A")) & (labels[mask] != gt[mask]))
+        as_dead = np.mean(labels[mask] == "D")
+        lines.append("  {:<24} {:>5} frames  right {:.1%}  other team {:.1%}  called D {:.1%}"
+                     .format(name, n, right, wrong_team, as_dead))
+    dead = window & (gt == "D")
+    for name, mask in (("D, ball visible", dead & ~missing), ("D, ball missing", dead & missing)):
+        if mask.sum():
+            lines.append("  {:<24} {:>5} frames  called D {:.1%}".format(
+                name, mask.sum(), np.mean(labels[mask] == "D")))
+    return lines
+
+
 def main():
     data = io_atd.load(GAME)
     gt = read_gt()
@@ -106,6 +170,8 @@ def main():
     print("  mean gap {:.1f} frames, share of missing frames in gaps > 2 s: {:.1%}".format(
         np.mean(gap_lengths), sum(g for g in gap_lengths if g > 50) / max(1, missing.sum())))
     print("  players tracked per frame " + quantiles(seen[graded].sum(1).astype(float)))
+    for line in tracking_noise(data, graded):
+        print(line)
 
     informative = window & alive & (np.abs(team) > 0.3)
     agree = np.sign(team[informative]) == np.where(gt[informative] == "H", 1, -1)
@@ -125,12 +191,18 @@ def main():
               + ", ".join("{:+.1f}".format(o / FPS) for o in sorted(offsets)))
 
     print("\n== full match, shape of each method's output (no ground truth needed) ==")
+    outputs = {}
     for name in ("baseline", "state_model", "learned"):
         method = methods.METHODS[name]
         labels = method(data, events) if name in methods.USES_TAGGING else method(data)
+        outputs[name] = labels
         n, mean_s, median_s, dead_share = shape(labels)
         print("  {:<12} {:>5} possessions  mean {:5.1f} s  median {:5.1f} s  dead {:.1%}".format(
             name, n, mean_s, median_s, dead_share))
+
+    print("\n== public window: where state_model's mistakes are (sanity, not for tuning) ==")
+    for line in error_breakdown(outputs["state_model"], gt, window, data["ball"], team):
+        print(line)
 
 
 if __name__ == "__main__":

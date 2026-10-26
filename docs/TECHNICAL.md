@@ -155,6 +155,12 @@ missing ball, in the same few long gaps, so no extra ball dropout is added. Cali
 on unlabeled aggregates of the target match is allowed; tuning on its labels is not, and is not
 done.
 
+To check the position noise the same way, `possession/diagnose.py` and `python -m tuning.noise`
+print identical unlabeled statistics for BAR-ATH and for each sample game, clean and degraded:
+distance from the ball to the nearest player, ball speed, frame-to-frame jitter of ball and players
+(the distance of a position from the midpoint of its two neighbours), and the tracker's player
+speeds. The degradation is matched to BAR-ATH on these numbers, never on its labels.
+
 **Protocol.** A seeded random search over the parameters in `possession/config.py`, with mean
 spellF1 over the three games as the objective. Generalisation is estimated **leave-one-game-out**:
 the best configuration on two games is scored on the third.
