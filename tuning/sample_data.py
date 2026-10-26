@@ -42,7 +42,13 @@ SAMPLE_DIR = os.environ.get("SAMPLE_DATA_DIR") or os.path.join(ROOT, "data", "ex
 PITCH = (105.0, 68.0)   # both sample games, per the sample-data README
 FPS = 25
 SPEED_SMOOTH = 2        # +/- frames of position smoothing before computing speed
-JITTER_WIDTH = 15       # frames over which the simulated tracking error drifts
+# Simulated tracking error, matched to BAR-ATH's unlabeled statistics (possession/diagnose.py,
+# tuning/noise.py): distance from the ball to the nearest player, position jitter, players tracked.
+NOISE_SIGMA = 10        # frames: the error drifts smoothly (Gaussian-smoothed), it does not jump
+BALL_OFFSET = 0.7       # metres: std of the ball's position error
+PLAYER_OFFSET = 0.3     # metres: std of each player's position error
+TRACK_LOSS = 0.12       # share of frames on which a player slot is not tracked
+TRACK_LOSS_RUN = 100    # frames: mean length of one loss
 ON_BALL = {"PASS", "CARRY", "RECOVERY", "SET PIECE", "SHOT", "BALL LOST"}
 STOPPAGE = {"BALL OUT", "FAULT RECEIVED"}
 
@@ -247,29 +253,84 @@ def labels_from_events(events, n_frames, halves, controlled_only=True):
 
 # -- degradation -----------------------------------------------------------------------------
 
-def _smooth_noise(rng, shape, std, width=JITTER_WIDTH):
-    """Zero-mean noise that drifts over about `width` frames, like a tracker's position error,
-    rather than jumping every frame (white noise would turn into several m/s of fake speed)."""
-    white = rng.normal(0, 1, shape)
-    kernel = np.ones(width) / np.sqrt(width)
-    smooth = np.apply_along_axis(lambda v: np.convolve(v, kernel, mode="same"), 0, white)
-    return smooth * std
+def _smooth_noise(rng, shape, std, sigma=NOISE_SIGMA):
+    """Zero-mean noise with standard deviation `std` that drifts over about `sigma` frames.
+
+    White noise is convolved with a Gaussian kernel (via FFT) and rescaled. A tracker's position
+    error is like that: it wanders, it does not jump. BAR-ATH's frame-to-frame jitter is under a
+    centimetre, so any jumpy noise would be both unrealistic and turned into fake speed.
+    """
+    n = shape[0]
+    t = np.arange(-4 * sigma, 4 * sigma + 1)
+    kernel = np.exp(-t ** 2 / (2.0 * sigma ** 2))
+    kernel /= np.sqrt((kernel ** 2).sum())
+    size = n + len(kernel) - 1
+    white = rng.normal(0, 1, (size,) + tuple(shape[1:]))
+    padded = np.zeros(size)
+    padded[:len(kernel)] = kernel
+    spectrum = np.fft.rfft(padded).reshape((-1,) + (1,) * (len(shape) - 1))
+    smooth = np.fft.irfft(np.fft.rfft(white, axis=0) * spectrum, n=size, axis=0)
+    return smooth[len(kernel) - 1:len(kernel) - 1 + n] * std
 
 
-def degrade(data, rng, ball_missing=None, mean_gap=20, jitter=0.3, slot_dropout=0.04):
+def _lose_tracks(rng, players, share, mean_run):
+    """Blank each player slot in runs (geometric lengths, mean `mean_run`) on about `share` of frames."""
+    out = players.copy()
+    n = len(out)
+    mean_visible = mean_run * (1 - share) / share
+    for slot in range(out.shape[1]):
+        t = int(rng.geometric(1.0 / mean_visible))
+        while t < n:
+            run = int(rng.geometric(1.0 / mean_run))
+            out[t:t + run, slot] = np.nan
+            t += run + int(rng.geometric(1.0 / mean_visible))
+    return out
+
+
+def show_dead_ball(ball, labels, share, rng):
+    """A copy of ball in which about `share` of the ball gaps that fall in dead time are filled.
+
+    In the sample games the ball is almost always missing while play is stopped, so "ball gone for
+    a while" is nearly a perfect stoppage detector there. A tracker on a broadcast-style camera can
+    also keep seeing the ball during a stoppage (a throw-in being taken, a free kick being set up).
+    How often BAR-ATH's tracker does that is unknown, so the tuning sees both worlds: games as they
+    are, and games where some dead-time gaps are filled by a straight line from where the ball was
+    last seen to where it is seen next (the ball carried to the restart spot).
+    """
+    out = ball.copy()
+    missing = np.isnan(out[:, 0])
+    edges = np.diff(np.r_[0, missing.astype(np.int8), 0])
+    for start, stop in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+        if start == 0 or stop >= len(out) or np.mean(labels[start:stop] == "D") < 0.5:
+            continue
+        if rng.random() < share:
+            w = np.linspace(0, 1, stop - start + 2)[1:-1, None]
+            out[start:stop] = (1 - w) * out[start - 1] + w * out[stop]
+    return out
+
+
+def degrade(data, rng, ball_missing=None, mean_gap=20, ball_offset=BALL_OFFSET,
+            player_offset=PLAYER_OFFSET, track_loss=TRACK_LOSS, labels=None, dead_visible=0.0):
     """A copy of data made to look like automatic, uncorrected tracking.
 
-    Adds slowly drifting positional error and short dropouts of player tracks, so parameters are not
-    tuned on cleaner positions than they will meet.
+    Every number is matched to BAR-ATH's unlabeled whole-match statistics (no labels involved):
 
-    **The ball is left as it is by default.** possession/diagnose.py, run on the whole graded
-    BAR-ATH match with no ground truth involved, found the ball missing on 40.7% of frames in only
-    150 gaps with a median length of 268 frames: long stretches, not short occlusions. The sample
-    games already look like that on their own (32-41% missing, 155-169 gaps, median 127-196
-    frames), so no extra ball dropout is added. `ball_missing` (a target share) and `mean_gap` can
-    still add short bursts, to test robustness to a worse tracker.
+      - **Position error.** Smoothly drifting error, 0.7 m on the ball and 0.3 m on players. On
+        BAR-ATH the nearest player to a visible ball is at p10 0.44 / p50 1.91 / p90 7.02 m; in the
+        clean sample games it is at p10 0.04 / p50 0.28 m, because their ball positions were
+        corrected by hand. Jitter stays under a centimetre on both, as on BAR-ATH.
+      - **Lost player tracks.** BAR-ATH tracks a median of 20 of the 22 players (p10 15); the
+        sample games track all 22. Each slot is lost on 12% of frames, in runs of about 4 s.
+      - **The ball is left as it is by default.** The ball is missing on 40.7% of BAR-ATH's graded
+        frames in only 150 long gaps (median 268 frames), and the sample games already look like
+        that (32-41% missing, 155-169 gaps). `ball_missing` (a target share) and `mean_gap` can
+        still add short bursts, to test robustness to a worse tracker.
+      - `dead_visible` > 0 (with the game's `labels`) fills that share of the dead-time ball gaps,
+        see show_dead_ball.
     """
     ball = data["ball"].copy()
+    if dead_visible > 0:
+        ball = show_dead_ball(ball, labels, dead_visible, rng)
     players = data["players"].copy()
     n = len(ball)
     already = np.isnan(ball[:, 0]).mean()
@@ -285,9 +346,8 @@ def degrade(data, rng, ball_missing=None, mean_gap=20, jitter=0.3, slot_dropout=
             missing[t:t + gap] = True
             t += gap
         ball[missing] = np.nan
-    ball += _smooth_noise(rng, ball.shape, jitter)
-    players[:, :, :2] += _smooth_noise(rng, players[:, :, :2].shape, jitter)
-    drop = rng.random(players.shape[:2]) < slot_dropout / 25.0
-    for f, s in zip(*np.nonzero(drop)):
-        players[f:f + int(rng.integers(5, 50)), s] = np.nan
+    ball += _smooth_noise(rng, ball.shape, ball_offset)
+    players[:, :, :2] += _smooth_noise(rng, players[:, :, :2].shape, player_offset)
+    if track_loss > 0:
+        players = _lose_tracks(rng, players, track_loss, TRACK_LOSS_RUN)
     return {**data, "ball": ball, "players": players}
