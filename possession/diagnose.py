@@ -92,6 +92,21 @@ def main():
         print("  mean player speed         " + quantiles(mean_speed[mask]))
         print("  dead evidence             " + quantiles(dead[mask]))
 
+    # Shape of the tracking noise over the whole graded match. These calibrate the simulated
+    # degradation in tuning/sample_data.degrade, which is how the parameters are made to transfer.
+    graded = np.zeros(len(gt), dtype=bool)
+    for _, first, last in half_video_blocks(GAME):
+        graded[first:last + 1] = True
+    missing = np.isnan(data["ball"][:, 0]) & graded
+    gap_lengths = [e - s for lab, s, e in runs(missing.astype(int)) if lab == 1]
+    print("\n== whole graded match: tracking noise (calibrates tuning/sample_data.degrade) ==")
+    print("  ball missing on {:.1%} of graded frames, in {} gaps".format(
+        missing.sum() / graded.sum(), len(gap_lengths)))
+    print("  gap length (frames)       " + quantiles(np.array(gap_lengths, dtype=float)))
+    print("  mean gap {:.1f} frames, share of missing frames in gaps > 2 s: {:.1%}".format(
+        np.mean(gap_lengths), sum(g for g in gap_lengths if g > 50) / max(1, missing.sum())))
+    print("  players tracked per frame " + quantiles(seen[graded].sum(1).astype(float)))
+
     informative = window & alive & (np.abs(team) > 0.3)
     agree = np.sign(team[informative]) == np.where(gt[informative] == "H", 1, -1)
     print("\nteam evidence |e| > 0.3 on {:.1%} of alive frames, agrees with GT on {:.1%}".format(
@@ -110,7 +125,7 @@ def main():
               + ", ".join("{:+.1f}".format(o / FPS) for o in sorted(offsets)))
 
     print("\n== full match, shape of each method's output (no ground truth needed) ==")
-    for name in ("baseline", "state_model"):
+    for name in ("baseline", "state_model", "learned"):
         method = methods.METHODS[name]
         labels = method(data, events) if name in methods.USES_TAGGING else method(data)
         n, mean_s, median_s, dead_share = shape(labels)

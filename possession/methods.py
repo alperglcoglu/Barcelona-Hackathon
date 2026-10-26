@@ -70,11 +70,11 @@ def frame_scores(data, events=None):
     team = config.TEAM_WEIGHT * features.team_evidence(ball, data["players"], data["team"])
     if events:
         team = team + tagging_prior.team_prior(events, len(team))
-    dead = features.dead_evidence(ball, data["players"], data["pitch"])
+    dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"])
     return np.stack([team / 2.0, -team / 2.0, dead], axis=1)
 
 
-def _decode(scores, halves):
+def decode(scores, halves):
     cost = hmm.transition_costs(config.SWITCH_COST, config.TO_DEAD_COST, config.FROM_DEAD_COST)
     labels = np.full(len(scores), "X", dtype="<U1")
     for first, last in halves:
@@ -97,7 +97,7 @@ def state_model(data, events=None, halves=None):
     `halves` is [(first, last)] video frames, BAR-ATH's published halves by default. Other games
     (tuning/) pass their own.
     """
-    return _decode(frame_scores(data, events), _default_halves(halves))
+    return decode(frame_scores(data, events), _default_halves(halves))
 
 
 def learned_model(data, events=None, halves=None, model=None):
@@ -108,7 +108,7 @@ def learned_model(data, events=None, halves=None, model=None):
         prior = tagging_prior.team_prior(events, len(scores))
         scores[:, 0] += prior / 2.0
         scores[:, 1] -= prior / 2.0
-    return _decode(scores, halves)
+    return decode(scores, halves)
 
 
 METHODS = {

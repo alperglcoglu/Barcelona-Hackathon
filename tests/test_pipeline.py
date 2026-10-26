@@ -112,9 +112,10 @@ def test_submission_roundtrip(tmp_path):
 
 # -- state model -----------------------------------------------------------------------------
 
-from possession import config, features, hmm, tagging_prior  # noqa: E402
+from possession import features, hmm, tagging_prior  # noqa: E402
 
-COST = hmm.transition_costs(config.SWITCH_COST, config.TO_DEAD_COST, config.FROM_DEAD_COST)
+# Fixed costs, so these tests pin down the decoder's behaviour rather than the tuned values.
+COST = hmm.transition_costs(10.0, 25.0, 25.0)
 
 
 def _scores(team, dead):
