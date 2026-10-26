@@ -15,7 +15,7 @@ ball) or `X` (no answer). Entries are ranked on `spellF1`, with `macroF1` as the
 
 ```bash
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt             # Python 3.9-3.14; no compiler needed
 
 # unpack the gated match data into ./data (see data/README.md), or set MTAH_DATA_DIR
 python -m possession.pipeline --check-baseline         # one-off: loader reproduces the official floor

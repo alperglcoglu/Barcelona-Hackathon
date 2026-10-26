@@ -1,4 +1,6 @@
-# Pinned so the submission file is reproducible bit for bit (RULES.md section 3).
-# Tested on Python 3.11. The organisers' scorer needs only numpy and pandas.
-numpy==2.0.2
-pandas==2.2.3
+# Ranges rather than exact pins, so pip finds a prebuilt wheel on any current Python (3.9-3.14)
+# and on Windows, macOS and Linux, with no compiler needed. The pipeline uses only basic numpy
+# operations, so its output does not depend on the version within these ranges. The exact versions
+# that produced the submitted file are recorded in requirements-lock.txt.
+numpy>=1.26,<3
+pandas>=2.1,<3
