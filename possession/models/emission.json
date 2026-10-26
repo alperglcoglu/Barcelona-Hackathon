@@ -1,0 +1,45 @@
+{
+  "team": {
+    "intercept": 0.2573343376586589,
+    "coef": [
+      2.715938593862096,
+      0.03337546640918968,
+      0.041659085617218435,
+      -2.954650672443676,
+      0.3051667884602327,
+      0.36860800517612574,
+      -1.2814371356061105
+    ],
+    "features": [
+      "closeness_diff",
+      "nearest_diff",
+      "contested",
+      "ball_attack_x",
+      "spread_diff",
+      "advance_diff",
+      "speed_diff"
+    ]
+  },
+  "dead": {
+    "intercept": 0.34281818710715384,
+    "coef": [
+      -1.2336759882501864,
+      1.7108572836831353,
+      1.5105880090819586,
+      -0.6430287926671744,
+      -0.5935028206556914,
+      -0.4234311116412233,
+      0.0648664104662698
+    ],
+    "features": [
+      "mean_speed",
+      "speed_below_pivot",
+      "ball_out",
+      "ball_still",
+      "ball_nearest",
+      "n_tracked",
+      "spread_all"
+    ]
+  },
+  "trained_on": "Metrica sample games 1-3, degraded by tuning/sample_data.degrade, seeds [0, 1]"
+}
