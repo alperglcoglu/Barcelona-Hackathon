@@ -106,7 +106,52 @@ def team_evidence(ball, players, team):
     speed = np.nan_to_num(ball_speed(ball), nan=0.0)
     calm = 1.0 / (1.0 + (speed / config.CONTROL_BALL_SPEED) ** 2)
     evidence = (close_home - close_away) * calm
+    if config.TOUCH_WEIGHT > 0:
+        evidence = evidence + config.TOUCH_WEIGHT * touch_evidence(ball, d_home, d_away)
     return np.where(np.isnan(ball[:, 0]), 0.0, evidence)
+
+
+def touch_evidence(ball, d_home, d_away):
+    """+1 / -1 on frames where a home / away player touches the ball, 0 elsewhere.
+
+    The idea comes from the possession-zone algorithm of Vidal-Codina et al. (2022), as described
+    in the DataBallPy documentation: a player gains the ball when it is inside their zone and its
+    velocity changes, because a ball that changes direction or speed next to a player was played
+    by that player. Distance alone cannot tell a ball rolling past a player from one the player
+    stops or redirects.
+
+    Here: the ball velocity is averaged over TOUCH_SPAN frames before and after each frame, and a
+    touch is a local maximum of the change |v_after - v_before| above TOUCH_DV m/s. The touch goes
+    to the team whose nearest player is within TOUCH_RADIUS, if the other team's nearest player is
+    farther away. The evidence is spread over +/- TOUCH_SPAN frames, the window it was seen in. No
+    touch is read next to a ball gap.
+    """
+    n, k = len(ball), config.TOUCH_SPAN
+    if n <= 2 * k + 1:
+        return np.zeros(n)
+    smooth = np.stack([nan_moving_mean(ball[:, i], config.BALL_SPEED_SMOOTH) for i in (0, 1)], 1)
+    velocity = np.full((n, 2), np.nan)
+    velocity[1:] = (smooth[1:] - smooth[:-1]) * FPS
+    before = np.stack([nan_moving_mean(velocity[:, i], k // 2) for i in (0, 1)], 1)
+    change = np.full(n, np.nan)
+    change[k:n - k] = np.hypot(*(before[2 * k:] - before[:n - 2 * k]).T)
+    # Only where the whole window saw the ball: averages cut short by a gap or by the start of the
+    # data shift the estimated velocity and would fake a touch every time the ball reappears.
+    reach = k + config.BALL_SPEED_SMOOTH + 1
+    seen = nan_moving_mean((~np.isnan(ball[:, 0])).astype(float), reach)
+    index = np.arange(n)
+    whole = (seen == 1.0) & (index >= reach) & (index < n - reach)
+    change = np.where(whole, np.nan_to_num(change, nan=0.0), 0.0)
+    peak = np.zeros(n, dtype=bool)
+    peak[1:-1] = (change[1:-1] >= change[:-2]) & (change[1:-1] > change[2:])
+    peak &= change > config.TOUCH_DV
+    home = np.nan_to_num(d_home, nan=np.inf)
+    away = np.nan_to_num(d_away, nan=np.inf)
+    side = np.where((home < config.TOUCH_RADIUS) & (home < away), 1.0,
+                    np.where((away < config.TOUCH_RADIUS) & (away < home), -1.0, 0.0))
+    touch = np.where(peak, side, 0.0)
+    spread = np.convolve(touch, np.ones(2 * k + 1), mode="same")
+    return np.clip(spread, -1.0, 1.0)
 
 
 def dead_evidence(ball, players, pitch):

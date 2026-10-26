@@ -54,6 +54,9 @@ EVIDENCE_SPACE = {
         "BALL_MAX_GAP": (0, 50, "int"),
         "DEAD_GAP_MIN": (12, 300, "int"),
         "DEAD_GAP_SCORE": (0.0, 3.0, "lin"),
+        "TOUCH_WEIGHT": (0.0, 1.5, "lin"),
+        "TOUCH_DV": (2.0, 8.0, "log"),
+        "TOUCH_RADIUS": (0.8, 3.0, "log"),
     },
     "learned": {
         "CONTROL_SIGMA": (0.6, 3.0, "log"),

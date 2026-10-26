@@ -190,6 +190,22 @@ def test_dead_evidence_out_of_play_and_slow_players(monkeypatch):
     assert g[5] < 0 < g[45] < g[55]
 
 
+def test_touch_evidence_needs_a_velocity_change_near_a_player(monkeypatch):
+    for key, value in {"TOUCH_DV": 3.0, "TOUCH_RADIUS": 1.5, "TOUCH_SPAN": 4,
+                       "BALL_SPEED_SMOOTH": 2}.items():
+        monkeypatch.setattr(features.config, key, value)
+    n = 80
+    x = np.r_[np.linspace(30.0, 40.0, 40), np.linspace(40.0, 30.0, 40)]   # 10 m/s, then back
+    ball = np.c_[x, np.full(n, 30.0)]
+    near = np.full(n, 0.5)          # a home player on the ball where it turns
+    far = np.full(n, 10.0)
+    touch = features.touch_evidence(ball, near, far)
+    assert touch[38:42].max() == 1 and touch[:25].max() == 0 and touch.min() == 0
+    assert features.touch_evidence(ball, far, near)[38:42].min() == -1
+    straight = np.c_[np.linspace(30.0, 50.0, n), np.full(n, 30.0)]
+    assert not features.touch_evidence(straight, near, far).any()
+
+
 def test_tagging_prior_signs():
     events = [{"code": "BUILD UP", "side": "H", "start_frame": 0, "end_frame": 5},
               {"code": "DEFENDING IN MIDDLE THIRD", "side": "H", "start_frame": 5, "end_frame": 10},
