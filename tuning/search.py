@@ -31,6 +31,7 @@ from . import metrics, sample_data
 
 # Params
 CACHE = os.path.join(config.CACHE_DIR, "sample_games_v2.pkl")
+# Every degradation gets its own seed; changing degrade() changes every score below.
 SEEDS = (0, 1)
 N_OUTER = 30
 N_INNER = 12
@@ -45,6 +46,8 @@ EVIDENCE_SPACE = {
         "DEAD_SPEED_WEIGHT": (0.2, 3.0, "log"),
         "DEAD_SPEED_CLIP": (0.3, 3.0, "log"),
         "BALL_MAX_GAP": (0, 50, "int"),
+        "DEAD_GAP_MIN": (12, 300, "int"),
+        "DEAD_GAP_SCORE": (0.0, 3.0, "lin"),
     },
     "learned": {
         "CONTROL_SIGMA": (0.6, 3.0, "log"),

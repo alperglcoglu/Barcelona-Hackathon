@@ -19,7 +19,7 @@ Why this and not a smoothing window:
     rule for loose and contested balls.
 
 The penalties are in the same units as the weighted per-frame evidence. With the tuned values in
-config.py (SWITCH_COST 19.3, TEAM_WEIGHT 3.9) a hand-over that sticks needs about 5 frames of the
+config.py (SWITCH_COST 2.74, TEAM_WEIGHT 0.32) a hand-over that sticks needs about 9 frames of the
 other team clearly controlling a calm ball. A short spell by the other team in the middle of a
 possession costs two switches, so it survives only with about twice that. A touch or a deflection
 does not.

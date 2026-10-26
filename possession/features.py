@@ -112,7 +112,7 @@ def team_evidence(ball, players, team):
 def dead_evidence(ball, players, pitch):
     """Per-frame log-odds that the ball is dead (positive) rather than alive (negative).
 
-    Two signals are used, and each one covers the other's blind spot:
+    Three signals are used, and each covers another's blind spot:
 
       - **The ball is outside the pitch.** It is decisive when it is visible, but the ball is often
         lost exactly when it goes out.
@@ -120,6 +120,7 @@ def dead_evidence(ball, players, pitch):
         never depends on the ball being seen. It is averaged over a second so that a single slow
         frame in open play means nothing. The score is linear in the speed: every m/s below the
         pivot speed counts toward dead, every m/s above it toward alive.
+      - **The ball has been missing for a long time.** See long_gap.
     """
     length, width = float(pitch[0]), float(pitch[1])
     margin = config.OUT_MARGIN
@@ -137,4 +138,24 @@ def dead_evidence(ball, players, pitch):
     # No players tracked at all (camera off the pitch): no speed signal, treat as neutral-dead.
     slow = np.where(np.isnan(slow), config.DEAD_NO_PLAYERS, slow)
     return np.clip(slow, -config.DEAD_SPEED_CLIP, config.DEAD_SPEED_CLIP) \
-        + np.where(out, config.DEAD_OUT_SCORE, 0.0)
+        + np.where(out, config.DEAD_OUT_SCORE, 0.0) \
+        + np.where(long_gap(ball, config.DEAD_GAP_MIN), config.DEAD_GAP_SCORE, 0.0)
+
+
+def long_gap(ball, min_length):
+    """True on frames inside a run of missing ball at least min_length frames long.
+
+    The automatic tracker loses the ball for long stretches mostly while it is out of play: on the
+    whole BAR-ATH match the ball is missing in only 150 gaps with a median of 268 frames (about 11 s),
+    and in the sample games over 80% of dead-ball frames have no ball. A short gap is an occlusion
+    and says nothing. A long one is evidence of a stoppage. Pass the ball after interpolation, so the
+    short gaps are already filled.
+    """
+    missing = np.isnan(ball[:, 0]).astype(np.int8)
+    edges = np.diff(np.concatenate(([0], missing, [0])))
+    starts, ends = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    out = np.zeros(len(ball), dtype=bool)
+    for start, end in zip(starts, ends):
+        if end - start >= min_length:
+            out[start:end] = True
+    return out
