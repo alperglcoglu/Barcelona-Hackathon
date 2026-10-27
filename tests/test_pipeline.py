@@ -225,7 +225,9 @@ def test_switch_scale_keeps_short_possession_with_clear_cue():
     assert out == "H" * 100 + "A" * 12 + "H" * 100
 
 
-def test_transition_cue_marks_the_tagged_team_after_the_start():
+def test_transition_cue_marks_the_tagged_team_after_the_start(monkeypatch):
+    monkeypatch.setattr(config, "TRANSITION_CUE_FROM", 12)
+    monkeypatch.setattr(config, "TRANSITION_CUE_TO", 150)
     events = [{"code": "ATTACKING TRANSITION", "start_frame": 100, "end_frame": 400, "side": "A",
                "tags": {}},
               {"code": "DEFENSIVE TRANSITION", "start_frame": 100, "end_frame": 400, "side": "H",
