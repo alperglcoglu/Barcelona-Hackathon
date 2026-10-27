@@ -112,6 +112,42 @@ def team_evidence(ball, players, team):
     return np.where(np.isnan(ball[:, 0]), 0.0, evidence)
 
 
+def handover_cue(ball, players, team):
+    """(n_frames, 2) cue in [0, 1] that home (column 0) / away (column 1) takes the ball here.
+
+    The Viterbi charges SWITCH_COST for every change of team. A fixed cost is a fixed amount of
+    evidence a hand-over must collect, so a short possession by the other team is erased unless its
+    frames add up to twice that. This cue lets methods.decode lower the cost locally, where the ball
+    itself shows a team taking it (docs/TECHNICAL.md, section 10). It reads two signals that only
+    exist where the ball is seen:
+
+      - **clear control**: the team's nearest player is close to a calm ball and the other team's
+        is not: max(0, closeness_team - closeness_other) * calm, the one-sided part of
+        team_evidence. That is the nearest vs second-nearest gap between the two teams;
+      - **a touch**: the team's player changes the ball's velocity (touch_evidence).
+
+    The cue is the larger of the two, spread over +/- SWITCH_CUE_SPAN frames so a hand-over placed a
+    little before or after the touch still gets it. Where the ball is missing the cue is 0 and the
+    cost stays full: the ball-free evidence (width) is too slow to place a hand-over.
+    """
+    d_home, d_away = team_distances(ball, players, team)
+    sigma2 = 2.0 * config.CONTROL_SIGMA ** 2
+    close_home = np.where(np.isnan(d_home), 0.0, np.exp(-np.nan_to_num(d_home) ** 2 / sigma2))
+    close_away = np.where(np.isnan(d_away), 0.0, np.exp(-np.nan_to_num(d_away) ** 2 / sigma2))
+    speed = np.nan_to_num(ball_speed(ball), nan=0.0)
+    calm = 1.0 / (1.0 + (speed / config.CONTROL_BALL_SPEED) ** 2)
+    control = (close_home - close_away) * calm
+    touch = touch_evidence(ball, d_home, d_away)
+    cue = np.stack([np.maximum(np.maximum(control, 0.0), np.maximum(touch, 0.0)),
+                    np.maximum(np.maximum(-control, 0.0), np.maximum(-touch, 0.0))], axis=1)
+    cue[np.isnan(ball[:, 0])] = 0.0
+    k = config.SWITCH_CUE_SPAN
+    if k > 0:
+        padded = np.pad(cue, ((k, k), (0, 0)))
+        cue = np.max([padded[i:i + len(cue)] for i in range(2 * k + 1)], axis=0)
+    return np.clip(cue, 0.0, 1.0)
+
+
 def width_evidence(players, team):
     """Ball-free team evidence in [-1, 1] from how wide each team stands: + home wider, - away wider.
 

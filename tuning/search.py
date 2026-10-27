@@ -151,8 +151,7 @@ def decode_score(scores, params, cases):
     with Patched(params):
         spell, macro = {}, []
         for raw, (name, _, _, halves, gt) in zip(scores, cases):
-            weighted = raw * np.array([config.TEAM_WEIGHT, config.TEAM_WEIGHT, config.DEAD_WEIGHT])
-            pred = methods.decode(weighted, halves)
+            pred = methods.decode(methods.weigh(raw), halves)
             spell.setdefault(name, []).append(metrics.spell_f1(gt, pred)[0])
             macro.append(metrics.macro_f1(gt, pred))
     return {k: float(np.mean(v)) for k, v in spell.items()}, float(np.mean(macro))
