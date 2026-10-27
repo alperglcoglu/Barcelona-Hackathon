@@ -177,9 +177,10 @@ def test_team_evidence_sign_and_flight():
 
 def test_dead_evidence_out_of_play_and_slow_players(monkeypatch):
     # Fixed values, so the test checks the shape of the evidence and not the current tuning.
-    for key, value in {"DEAD_SPEED_PIVOT": 1.8, "DEAD_SPEED_WEIGHT": 0.35,
+    for key, value in {"DEAD_SPEED_RATIO": 0.8, "DEAD_SPEED_WEIGHT": 0.8,
                        "DEAD_SPEED_CLIP": 0.8, "DEAD_OUT_SCORE": 3.0}.items():
         monkeypatch.setattr(features.config, key, value)
+    monkeypatch.setattr(features, "TYPICAL_MIN_PLAYERS", 1)
     pitch = np.array(PITCH)
     n = 60
     ball = np.tile([50.0, 30.0], (n, 1))
