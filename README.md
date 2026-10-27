@@ -24,6 +24,9 @@ python evaluation/validate_submission.py evaluation/results/<team>.csv
 python evaluation/run_evaluation.py                    # score on the public 5-minute window
 ```
 
+The pipeline prints the SHA-256 of the file it writes. The run is deterministic, so the same data
+and the package versions in `requirements-lock.txt` give the same hash as the submitted file.
+
 The run is deterministic, so the same data always gives the same file. The first run parses the
 tracking once into `data/cache/`, which is gitignored like everything else under `data/`.
 
