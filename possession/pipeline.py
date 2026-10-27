@@ -9,6 +9,7 @@ the same file out, which is what RULES.md section 3 requires.
 """
 
 import argparse
+import hashlib
 import os
 import sys
 
@@ -77,6 +78,8 @@ def main(argv=None):
     print("wrote {}".format(os.path.relpath(out, config.ROOT)))
     print("  " + "  ".join("{} {}".format(k, v) for k, v in counts.items()))
     print("  {} possessions".format(n_possessions))
+    with open(out, "rb") as handle:
+        print("  sha256 {}".format(hashlib.sha256(handle.read()).hexdigest()))
     print("\nnext:  python evaluation/validate_submission.py {}".format(out))
     print("       python evaluation/run_evaluation.py")
     return 0
