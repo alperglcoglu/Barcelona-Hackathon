@@ -96,3 +96,27 @@ def test_detects_a_mirrored_export():
 
 def test_cluster_offsets_votes():
     assert broadcast.cluster_offsets([10, 12, 11, 500, 900, 905, 902, 901]) == [(901, 4), (11, 3)]
+
+
+def test_tv_evidence_is_calibrated_from_model_labels():
+    from possession import methods
+    labels = np.array(list("HHHHDDDDAAAAX"))
+    shown = np.array([1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0], dtype=bool)
+    covered = np.ones(13, dtype=bool)
+    covered[-1] = False
+    graded = np.ones(13, dtype=bool)
+    evidence, (hidden_dead, hidden_alive) = methods.tv_dead_evidence(shown, covered, labels, graded)
+    assert hidden_dead == 0.75 and hidden_alive == 0.125
+    assert np.isclose(evidence[3], np.log(0.75 / 0.125))      # hidden -> towards dead
+    assert np.isclose(evidence[0], np.log(0.25 / 0.875))      # shown -> towards alive
+    assert evidence[-1] == 0                                  # no broadcast here: no evidence
+
+
+def test_coverage_spans_matched_frames_only():
+    matched = np.zeros(100, dtype=bool)
+    matched[10:40] = True
+    offset = np.full(100, broadcast.NO_OFFSET, dtype=np.int64)
+    offset[10:40] = 50
+    out = {"clusters": [(50, 5)], "matched": matched, "offset": offset}
+    covered = broadcast.coverage(out, 200)
+    assert covered[60:90].all() and not covered[:60].any() and not covered[90:].any()

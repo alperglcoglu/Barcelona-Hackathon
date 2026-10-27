@@ -292,6 +292,22 @@ def align(bc, tac, valid=None, anchor_count=ANCHOR_COUNT, verbose=False):
     }
 
 
+def coverage(out, n_t):
+    """Tactical frames the broadcast recording spans at all, per offset cluster.
+
+    Outside this (before the broadcast starts, after it ends, in halftime) "not shown" means only
+    that there is no recording, so it must carry no evidence.
+    """
+    covered = np.zeros(n_t, dtype=bool)
+    for centre, _ in out["clusters"]:
+        frames = np.flatnonzero(out["matched"] & (np.abs(out["offset"] - centre) <= DENSE_SEARCH))
+        if len(frames):
+            first = max(0, frames[0] + out["offset"][frames[0]])
+            last = min(n_t - 1, frames[-1] + out["offset"][frames[-1]])
+            covered[first:last + 1] = True
+    return covered
+
+
 # -- running it on the real data -----------------------------------------------------------------
 
 def _cache_path(game):

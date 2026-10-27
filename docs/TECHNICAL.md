@@ -284,7 +284,7 @@ the same data always gives the same file.
 
 ## 7. Experiment in progress: the TV feed as a dead-ball signal
 
-Not part of the frozen submission. `possession/broadcast.py` builds it; `python -m
+Not part of the frozen submission; `python -m possession.pipeline --method state_model_tv` uses it. `possession/broadcast.py` builds it; `python -m
 possession.broadcast` prints aggregate numbers only and caches the result under `data/cache/`.
 
 ### Why
@@ -357,3 +357,34 @@ sanity check only, the share of dead and alive frames that were shown live.
 The signal is worth adding only if not-shown frames are far more often dead than shown ones. Its
 weight cannot be tuned on the sample games, which have no broadcast, so it would be set from these
 unlabeled rates, in the same way as the Smart Tagging weight (section 1.2).
+
+### First run on BAR-ATH (aggregates only)
+
+- Two offsets were found, +4,011 and +26,920 frames, one per half, with 78 and 66 anchor votes;
+  the other orientation got 8. The dense windows match with a median score of 0.94 and drift by at
+  most a few frames.
+- 90.8% of valid-homography broadcast frames match a live moment, against 4.0% of invalid ones.
+- 62.5% of graded tactical time is shown live. The not-shown stretches number 145, with a median
+  of 7 s and a p90 of 39 s: the length of stoppages, not of quick camera changes.
+- Without labels: the frozen model calls `D` on 26.3% of shown frames and 78.3% of not-shown ones.
+- Public window, sanity only: shown on 90.2% of alive frames and 29.5% of dead ones. The dead
+  frames on which the tracker still sees the ball, which the model calls `D` only 10% of the time,
+  are not shown on 71.4%.
+- The broadcast ball covers only 9% of the tactical ball gaps, so gap filling is left aside.
+
+### How it enters the model (`methods.state_model_tv`)
+
+As one more term in the dead-ball score of the Viterbi, a per-frame log-likelihood ratio:
+
+    not shown:  log( P(hidden | dead) / P(hidden | alive) )
+    shown:      log( P(shown | dead)  / P(shown | alive)  )
+
+and 0 where the broadcast recording does not exist (before it starts, halftime, after it ends).
+
+The two rates are estimated on the whole graded match **against the tracking-only model's own
+labels**, so no ground truth is read and nothing is tuned on the public window. The model runs
+twice: once without the cue, to calibrate it, and once with it. With the run above the rates are
+about 0.64 and 0.15, which gives +1.45 per not-shown frame and -0.86 per shown frame. That is the
+same order as the long-ball-gap evidence (1.88 per frame) the tuning chose. The model's labels are
+noisy, which pulls the two rates towards each other, so this ratio is if anything an underestimate.
+`TV_DEAD_WEIGHT` (1.0) scales it; it cannot be tuned because the sample games have no broadcast.

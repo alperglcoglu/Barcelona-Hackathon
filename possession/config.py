@@ -90,6 +90,11 @@ FROM_DEAD_COST = 48.2      # D -> alive
 TEAM_WEIGHT = 0.445
 DEAD_WEIGHT = 1.26
 
+# [fixed] Scale of the TV-feed dead-ball evidence (methods.state_model_tv). That evidence is
+# already a log-likelihood ratio estimated from the match itself without labels, so 1.0 means
+# "take the estimate at face value". The sample games have no broadcast, so it cannot be tuned.
+TV_DEAD_WEIGHT = 1.0
+
 # -- learned evidence (methods.learned, possession/learned.py) ---------------------------------
 # A single frame's log-odds is clipped to this, so no one frame can force a change of state alone.
 LEARNED_CLIP = 4.0

@@ -15,7 +15,7 @@ import sys
 
 import numpy as np
 
-from . import config, io_atd, io_tagging, methods, submission
+from . import broadcast, config, io_atd, io_tagging, methods, submission
 
 sys.path.insert(0, config.ROOT)
 from games import GAME, source_frames  # noqa: E402
@@ -63,8 +63,15 @@ def main(argv=None):
         return 0 if check_baseline(data) else 1
 
     method = methods.METHODS[args.method]
+    events = None
     if args.method in methods.USES_TAGGING and not args.no_tagging:
-        labels = method(data, io_tagging.load(GAME, args.data_dir))
+        events = io_tagging.load(GAME, args.data_dir)
+    if args.method in methods.USES_BROADCAST:
+        tv = broadcast.load(GAME, args.data_dir, use_cache=not args.no_cache)
+        tv["covered"] = broadcast.coverage(tv, len(data["ball"]))
+        labels = method(data, events, tv=tv)
+    elif events is not None:
+        labels = method(data, events)
     else:
         labels = method(data)
     reason = submission.check(labels, source_frames("tactical", GAME))
