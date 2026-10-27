@@ -198,7 +198,7 @@ TV_VARIANTS = {"full": (True, True), "shift": (True, False), "bins": (False, Tru
                "plain": (False, False)}
 
 
-def state_model_tv(data, events=None, halves=None, tv=None, variant="full"):
+def state_model_tv(data, events=None, halves=None, tv=None, variant="shift"):
     """state_model plus the TV feed's dead-ball cue (docs/TECHNICAL.md, section 7).
 
     Two passes: the tracking-only model labels the match, those labels calibrate the TV evidence,

@@ -54,7 +54,7 @@ def main(argv=None):
     parser.add_argument("--no-cache", action="store_true", help="re-parse the tracking")
     parser.add_argument("--no-tagging", action="store_true",
                         help="ignore the Smart Tagging (ablation: tracking only)")
-    parser.add_argument("--tv-variant", default="full", choices=sorted(methods.TV_VARIANTS),
+    parser.add_argument("--tv-variant", default="shift", choices=sorted(methods.TV_VARIANTS),
                         help="state_model_tv refinements: full, shift, bins or plain (ablation)")
     parser.add_argument("--check-baseline", action="store_true",
                         help="only verify the loader against the organisers' baseline file")

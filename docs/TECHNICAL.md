@@ -433,5 +433,21 @@ seconds late. Two refinements follow, both calibrated on the match itself withou
    `log P(bin | dead) / P(bin | alive)` against the tracking-only labels. A short cutaway during
    play then counts for less than a long absence. The bin edges are natural breaks, not searched.
 
-`--tv-variant` runs each refinement alone (`shift`, `bins`), both (`full`, the default) or neither
-(`plain`, the first version), so their effects can be measured separately.
+`--tv-variant` runs each refinement alone (`shift`, `bins`), both (`full`) or neither (`plain`, the
+first version), so their effects can be measured separately.
+
+Public window, as a sanity check (the lag came out at 3.3 s on the whole match):
+
+| variant | spellF1 | macroF1 | D precision / recall | possessions (truth 17) |
+|---|---|---|---|---|
+| `plain` (first version) | 0.413 | 0.741 | 0.62 / 0.86 | 13 |
+| `shift` (**default**) | 0.441 | 0.808 | 0.77 / 0.88 | 12 |
+| `bins` | 0.388 | 0.774 | 0.77 / 0.75 | 15 |
+| `full` | 0.400 | 0.819 | 0.95 / 0.73 | 13 |
+
+The lag correction is the clear gain: it removes most of the live frames called `D` after a
+restart without losing dead frames. The length bins raise D precision but miss more stoppages, and
+cost spellF1 alone and together with the lag. `shift` is the default. In fairness: choosing between
+`shift` and `full` uses this window, the gap between them is within its noise band (17 possessions),
+and both were designed before it was looked at. `shift` is also the simpler of the two, with no
+extra constants, which is the reason to prefer it independently of the window.
