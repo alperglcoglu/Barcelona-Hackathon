@@ -64,8 +64,17 @@ cover each other's blind spots:
 - *The ball is visibly beyond a line* (with a 0.5 m margin for tracking noise). Decisive, but the
   tracking often loses the ball exactly when it goes out.
 - *The players have stopped running.* During a stoppage twenty-two players walk. The mean speed of
-  all tracked players, averaged over ±1 s, enters linearly around a pivot speed. This signal never
-  needs the ball, which matters because the ball is missing on 41% of graded frames.
+  all tracked players, averaged over ±1 s, is divided by the match's own median pace (over frames
+  with at least 15 players tracked, so warm-up and half-time do not count) and enters linearly
+  around a pivot ratio, `DEAD_SPEED_RATIO` = 0.62. This signal never needs the ball, which
+  matters because the ball is missing on 41% of graded frames. The ratio is what transfers
+  between matches. BAR-ATH runs faster than the sample games: in its public window, used only as a
+  sanity check, the players' median speed is 2.27 m/s in play and 1.19 m/s in stoppages, against
+  about 2.0 and 1.0 in the sample games. An absolute pivot of 1.0 m/s, tuned on the sample games,
+  sat below most BAR-ATH stoppages, so it voted "alive" during them. A relative pivot adapts to
+  each match's pace without using its labels. Re-running the local search with the ratio free
+  picked 0.63, the same value, and gained nothing measurable (0.590 against 0.587), so the
+  previous tuning is kept.
 - *The ball has been missing for a long time* (`features.long_gap`). Every frame inside a run of
   at least `DEAD_GAP_MIN` = 16 missing frames (0.6 s) gets `DEAD_GAP_SCORE` of dead evidence. The
   reason is how the automatic tracking loses the ball. On the whole BAR-ATH match (aggregate

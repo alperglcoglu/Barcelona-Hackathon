@@ -24,6 +24,7 @@ import numpy as np
 from . import config
 
 FPS = 25
+TYPICAL_MIN_PLAYERS = 15   # frames with this many players tracked define the typical pace
 
 
 def interpolate_ball(ball, max_gap=None):
@@ -163,8 +164,10 @@ def dead_evidence(ball, players, pitch):
         lost exactly when it goes out.
       - **The players have slowed down.** During a stoppage twenty-two players walk, and this signal
         never depends on the ball being seen. It is averaged over a second so that a single slow
-        frame in open play means nothing. The score is linear in the speed: every m/s below the
-        pivot speed counts toward dead, every m/s above it toward alive.
+        frame in open play means nothing. The speed is divided by the match's own median pace,
+        because the trackers and the matches differ (BAR-ATH runs about 10% faster than the sample
+        games in play and in stoppages). The score is linear in that ratio: below
+        DEAD_SPEED_RATIO counts toward dead, above it toward alive.
       - **The ball has been missing for a long time.** See long_gap.
     """
     length, width = float(pitch[0]), float(pitch[1])
@@ -179,7 +182,12 @@ def dead_evidence(ball, players, pitch):
     with np.errstate(invalid="ignore", divide="ignore"):
         mean_speed = np.where(n_seen > 0, np.where(seen, speeds, 0.0).sum(axis=1) / n_seen, np.nan)
     mean_speed = nan_moving_mean(mean_speed, config.SPEED_SMOOTH)
-    slow = config.DEAD_SPEED_WEIGHT * (config.DEAD_SPEED_PIVOT - mean_speed)
+    # Relative to this match's own typical pace, so the pivot transfers between matches and
+    # trackers. The median needs no labels: it is taken over the frames where most players are
+    # tracked, which leaves out the warm-up and half-time when players are off the pitch.
+    crowded = (n_seen >= TYPICAL_MIN_PLAYERS) & np.isfinite(mean_speed)
+    typical = np.median(mean_speed[crowded]) if crowded.any() else np.nan
+    slow = config.DEAD_SPEED_WEIGHT * (config.DEAD_SPEED_RATIO - mean_speed / typical)
     # No players tracked at all (camera off the pitch): no speed signal, treat as neutral-dead.
     slow = np.where(np.isnan(slow), config.DEAD_NO_PLAYERS, slow)
     return np.clip(slow, -config.DEAD_SPEED_CLIP, config.DEAD_SPEED_CLIP) \

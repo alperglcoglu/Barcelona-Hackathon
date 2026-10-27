@@ -57,11 +57,12 @@ TOUCH_DV = 4.0             # [tuned] m/s of velocity change that counts as a tou
 TOUCH_RADIUS = 2.0         # [tuned] metres: the player's "possession zone"
 TOUCH_SPAN = 4             # [fixed] frames averaged on each side of the touch
 
-# Dead ball: a pivot on the players' mean speed. Above the pivot counts toward alive, below it
-# toward dead. In the sample games the median is about 2 m/s in play and about 1 m/s in stoppages.
+# Dead ball: a pivot on the players' mean speed, divided by the match's median pace (about 1.6 m/s
+# in the sample games). Above the pivot counts toward alive, below it toward dead. In the sample
+# games the ratio is about 1.25 in play and about 0.65 in stoppages.
 SPEED_SMOOTH = 25          # [fixed] +/- 1 s moving mean of the players' mean speed
-DEAD_SPEED_PIVOT = 1.0     # [tuned] m/s
-DEAD_SPEED_WEIGHT = 1.31   # [tuned] log-odds per m/s below the pivot
+DEAD_SPEED_RATIO = 0.62    # [tuned] pivot, as a share of the match's median pace
+DEAD_SPEED_WEIGHT = 2.1    # [tuned] log-odds per unit of that ratio below the pivot
 DEAD_SPEED_CLIP = 1.1      # [tuned] cap on one frame's speed evidence, either way
 DEAD_NO_PLAYERS = 1.0      # [fixed] no players tracked at all (camera off the pitch): lean dead
 OUT_MARGIN = 0.5           # [fixed] metres beyond a line before the ball counts as out

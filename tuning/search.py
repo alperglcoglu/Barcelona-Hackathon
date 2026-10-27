@@ -48,8 +48,8 @@ EVIDENCE_SPACE = {
     "state_model": {
         "CONTROL_SIGMA": (0.6, 3.0, "log"),
         "CONTROL_BALL_SPEED": (3.0, 30.0, "log"),
-        "DEAD_SPEED_PIVOT": (1.0, 2.2, "lin"),
-        "DEAD_SPEED_WEIGHT": (0.2, 3.0, "log"),
+        "DEAD_SPEED_RATIO": (0.4, 1.2, "lin"),
+        "DEAD_SPEED_WEIGHT": (0.3, 6.0, "log"),
         "DEAD_SPEED_CLIP": (0.3, 3.0, "log"),
         "BALL_MAX_GAP": (0, 50, "int"),
         "DEAD_GAP_MIN": (12, 300, "int"),
