@@ -19,8 +19,9 @@ Why this and not a smoothing window:
     rule for loose and contested balls.
 
 The penalties are in the same units as the weighted per-frame evidence. With the tuned values in
-config.py (SWITCH_COST 5.12, TEAM_WEIGHT 0.445) a hand-over that sticks needs about 12 frames of
-the other team clearly controlling a calm ball. A short spell by the other team in the middle of a
+config.py (SWITCH_COST 6.0, TEAM_WEIGHT 0.445) a hand-over that sticks needs about 13 frames of
+the other team clearly controlling a calm ball, or about 8 where the ball shows it taking the ball
+(SWITCH_RELIEF). A short spell by the other team in the middle of a
 possession costs two switches, so it survives only with about twice that. A touch or a deflection
 does not.
 """
@@ -38,8 +39,12 @@ def transition_costs(switch, to_dead, from_dead):
                      [from_dead, from_dead, 0.0]])
 
 
-def viterbi(scores, cost, initial=None):
+def viterbi(scores, cost, initial=None, switch_scale=None):
     """Best state path for scores (n_frames, 3) under transition costs (3, 3).
+
+    `switch_scale` (n_frames, 2), optional, multiplies the H <-> A cost of entering H (column 0)
+    or A (column 1) at each frame: the evidence-dependent switch cost of methods.decode. A value
+    below 1 makes a hand-over cheaper exactly where the ball evidence shows the new team taking it.
 
     Plain Python over lists: 3 states make the inner work tiny, and this is several times faster
     than per-frame numpy calls. About a second per half.
@@ -51,8 +56,13 @@ def viterbi(scores, cost, initial=None):
     c = cost.tolist()
     total = list(rows[0]) if initial is None else [rows[0][k] - initial[k] for k in range(3)]
     back_rows = [[0, 0, 0]] * n
+    scale = None if switch_scale is None else switch_scale.tolist()
+    switch = c[0][1]
     for t in range(1, n):
         row = rows[t]
+        if scale is not None:
+            c[1][0] = switch * scale[t][0]
+            c[0][1] = switch * scale[t][1]
         new = [0.0, 0.0, 0.0]
         pointers = [0, 0, 0]
         for j in range(3):

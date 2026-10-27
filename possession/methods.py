@@ -62,10 +62,12 @@ def baseline(data, window=config.BASELINE_WINDOW):
 
 
 def frame_scores(data, events=None):
-    """(n_frames, 3) per-frame scores for H, A and D, the input to the state model.
+    """(n_frames, 5) per-frame scores for H, A and D, then the hand-over cues for H and A.
 
     H and A share the team evidence with opposite signs, and D gets the dead-ball log-odds. A
-    frame with no information scores 0 everywhere and so never causes a change of state.
+    frame with no information scores 0 everywhere and so never causes a change of state. The last
+    two columns are features.handover_cue, read by decode for the evidence-dependent switch cost;
+    they are not scores and are never weighted.
     """
     ball = features.interpolate_ball(data["ball"])
     team = features.team_evidence(ball, data["players"], data["team"])
@@ -75,14 +77,27 @@ def frame_scores(data, events=None):
     if events:
         team = team + tagging_prior.team_prior(events, len(team))
     dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"])
-    return np.stack([team / 2.0, -team / 2.0, dead], axis=1)
+    cue = features.handover_cue(ball, data["players"], data["team"])
+    return np.column_stack([team / 2.0, -team / 2.0, dead, cue])
+
+
+def weigh(raw):
+    """Scale unweighted frame_scores (TEAM_WEIGHT = DEAD_WEIGHT = 1) by the configured weights."""
+    weights = np.array([config.TEAM_WEIGHT, config.TEAM_WEIGHT, config.DEAD_WEIGHT, 1.0, 1.0])
+    return raw * weights[:raw.shape[1]]
 
 
 def decode(scores, halves):
+    """Viterbi over H / A / D in each half. scores is (n, 3), or (n, 5) with the hand-over cues,
+    which then lower the H <-> A cost by SWITCH_RELIEF where they are high."""
     cost = hmm.transition_costs(config.SWITCH_COST, config.TO_DEAD_COST, config.FROM_DEAD_COST)
+    scale = None
+    if scores.shape[1] == 5 and config.SWITCH_RELIEF > 0:
+        scale = 1.0 - config.SWITCH_RELIEF * scores[:, 3:]
     labels = np.full(len(scores), "X", dtype="<U1")
     for first, last in halves:
-        path = hmm.viterbi(scores[first:last + 1], cost)
+        path = hmm.viterbi(scores[first:last + 1, :3], cost,
+                           switch_scale=None if scale is None else scale[first:last + 1])
         labels[first:last + 1] = hmm.LETTERS[path]
     return labels
 

@@ -213,3 +213,13 @@ def test_tagging_prior_signs():
               {"code": "SET PIECES", "side": None, "start_frame": 10, "end_frame": 12}]
     prior = tagging_prior.team_prior(events, 12, weight=1.0)
     assert (prior[:5] == 1).all() and (prior[5:10] == -1).all() and (prior[10:] == 0).all()
+
+
+def test_switch_scale_keeps_short_possession_with_clear_cue():
+    team = np.r_[np.ones(100), -np.ones(12), np.ones(100)]   # 12 frames: too short at full cost
+    scores = _scores(team, -np.ones(212))
+    assert set(hmm.LETTERS[hmm.viterbi(scores, COST)]) == {"H"}
+    scale = np.ones((212, 2))
+    scale[100, 1] = scale[112, 0] = 0.3                   # the ball shows each hand-over
+    out = "".join(hmm.LETTERS[hmm.viterbi(scores, COST, switch_scale=scale)])
+    assert out == "H" * 100 + "A" * 12 + "H" * 100

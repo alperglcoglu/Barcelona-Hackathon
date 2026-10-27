@@ -480,3 +480,101 @@ on the ball, so it decides only where the ball says nothing for many seconds.
 Sample games (tuned the usual way, section 3): spellF1 0.587 → 0.618, with all three games
 improving (0.618 → 0.645, 0.591 → 0.647, 0.553 → 0.564), and leave-one-game-out 0.598 against
 about 0.58 before.
+
+## 9. A wider tuning set: SkillCorner's open A-League matches
+
+Three tuning games is thin, and Metrica's event-derived labels are coarser than the competition's:
+about 230 possessions per match in game 1 and 2, against roughly 320 implied by the 17 possessions
+in BAR-ATH's public five minutes. A model tuned only on them merges possessions.
+
+SkillCorner publishes twenty 2024-25 A-League matches with broadcast tracking and, on every frame,
+the team in possession (github.com/SkillCorner/opendata). Ten are added (`tuning/skillcorner.py`,
+fetched by `tuning/fetch_skillcorner.sh`):
+
+- **Labels.** A frame with a team is `H` or `A`; a frame with none is `D`. Checked before use: the
+  players move at 1.1 m/s on no-team frames and 2.3 m/s on team frames, the stoppage/play ratio of
+  Metrica's games, and no-team runs last a median 17 s. The matches have about 350 possessions
+  each, close to BAR-ATH's granularity.
+- **Tracking.** SkillCorner's ball is missing on about 40% of in-play frames, like BAR-ATH (40.7%).
+  Positions are moved to a corner origin and resampled from 10 to 25 fps, so every frame-based
+  constant keeps its meaning. `degrade()` then adds the same noise as to Metrica's games.
+- **Not the DFL data.** The DFL/Sportec open matches were the first choice, but their host
+  (figshare) could not be reached from the development environment; SkillCorner's are on GitHub.
+
+`python -m tuning.search --games all --outer 15 --refine 40` then tuned every parameter on all
+thirteen games (two degradations each):
+
+| | Metrica (3) | SkillCorner (10) | all 13 | leave-one-game-out |
+|---|---|---|---|---|
+| previous config (Metrica only) | 0.619 | 0.363 | 0.422 | not tuned on SkillCorner |
+| retuned on all 13 | 0.582 | 0.385 | 0.430 | 0.428 |
+
+The retuned configuration traded a little on Metrica's coarse labels for more on the ten matches
+that look like BAR-ATH. The main changes were a wider control radius (`CONTROL_SIGMA` 0.8 → 2.39 m,
+because the automatic tracking puts the ball 1-2 m from its holder), short ball gaps bridged up to
+0.6 s, only gaps of 4 s or more read as stoppages, and a stronger width evidence (0.07 → 0.37).
+
+**Result on BAR-ATH: not adopted.** On the public five minutes (sanity check only, never tuned on)
+the retuned configuration scored spellF1 0.446 / macroF1 0.849, against 0.489 / 0.829 for the
+frozen one. Team accuracy on alive frames rose (0.818 → 0.862) and so did macroF1, but it predicted
+9 possessions instead of 10 (truth: 17), so the spells merged even more and spellF1, the ranking
+metric, fell. The rule is that a change must beat the frozen file, so `possession/config.py` keeps
+the frozen values. The SkillCorner loader and `--games all` stay as tuning infrastructure.
+
+The lesson: a better frame-level fit does not cure undersegmentation. A search that rewards
+spellF1 on SkillCorner matches with BAR-ATH-like granularity, or a model change that makes team
+switches cheaper where the evidence supports them, is needed instead of more of the same tuning.
+
+## 10. Undersegmentation: where possessions merge, and an evidence-dependent switch cost
+
+On BAR-ATH's public window the model predicts 10 possessions against 17. Before changing anything,
+`python -m tuning.segmentation --games all` breaks the errors down on the 13 tuning games (each
+degraded twice, config as frozen; never BAR-ATH):
+
+| | count |
+|---|---|
+| true / predicted possessions | 4058 / 2584 |
+| true possessions no predicted one of the same team touches | 1323 (33%) |
+| short (< 5 s) H → A → H interruptions missed | 560 of 831 (67%) |
+| short (< 5 s) H → D → H pauses with no D predicted | 62 of 126 (49%) |
+| predicted changes with no true change within 2 s | 1506 of 4051 (37%) |
+| median start / end error of a found possession | 2.1 s / 2.3 s |
+
+**Sweeping only SWITCH_COST** (2 → 8) moves along one trade-off: at 2 the output has as many
+possessions as the truth, but spurious changes rise from 1506 to 2242 and spellF1 falls from
+0.422 to 0.393. Even there, 61% of the short interruptions are still missed. 5.12 was already the
+best fixed value.
+
+**Why the interruptions are missed.** Inside the missed ones the ball is seen on 99% of frames, so
+it is not the missing ball. They last a median 1.7 s, and the summed team evidence over them
+points to the *outer* team (median -2.1, against +15.5 inside the interruptions that are found).
+The evidence itself does not show them, so no switch cost can recover them without inventing many
+false ones. Some of them are likely label artefacts: SkillCorner's possession group and Metrica's
+event-derived labels flip on a single contested touch.
+
+**Why the pauses are missed.** Lowering FROM_DEAD_COST (48 → 10) finds 2 more of the 126 and adds
+590 spurious changes. On SkillCorner a few seconds with no team in possession is most often a loose
+ball, not a stoppage, so these "pauses" are mostly a difference of definition, not an error to fix.
+
+**Evidence-dependent switch cost.** Instead of one cost for every hand-over, entering a team at a
+frame costs `SWITCH_COST x (1 - SWITCH_RELIEF x cue)`, where the cue (`features.handover_cue`, in
+[0, 1]) is the larger of two signals that need the ball: clear control by the new team (its nearest
+player close to a calm ball and the other team's not, the nearest vs second-nearest gap) and a touch
+by the new team (`touch_evidence`). Where the ball is missing the cue is 0 and the cost is full.
+`hmm.viterbi` takes the per-frame scale of the H <-> A cost (`switch_scale`).
+
+A grid over the cue's spread (0-50 frames), the relief (0.3-0.6) and the base cost (5.12-7), every
+other parameter fixed:
+
+| | mean spellF1 (13 games) | games better | predicted | spurious |
+|---|---|---|---|---|
+| frozen (fixed cost 5.12) | 0.422 | | 2584 | 1506 |
+| relief 0.4, cost 6.0, no spread | 0.428 | 12 of 13 | 2708 | 1532 |
+| relief 0.6, cost 5.12, spread 50 | 0.404 | 3 of 13 | 3738 | 2067 |
+
+Relief helps only if the base cost goes up with it: hand-overs the ball shows clearly get cheaper
+(3.6), the ones it does not show get dearer (6.0). Spreading the cue over a window, or relieving more
+than half the cost, adds spurious changes faster than it finds true ones. The gain is small (+0.006)
+but consistent across games, and it adds possessions (2708 against 2584) without adding many
+spurious changes, which is the direction BAR-ATH needs. Whether it beats the frozen file on BAR-ATH
+is decided by the local run, as always.
