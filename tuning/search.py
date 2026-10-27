@@ -57,6 +57,8 @@ EVIDENCE_SPACE = {
         "TOUCH_WEIGHT": (0.0, 1.5, "lin"),
         "TOUCH_DV": (2.0, 8.0, "log"),
         "TOUCH_RADIUS": (0.8, 3.0, "log"),
+        "WIDTH_WEIGHT": (0.0, 0.4, "lin"),
+        "WIDTH_SCALE": (1.0, 10.0, "log"),
     },
     "learned": {
         "CONTROL_SIGMA": (0.6, 3.0, "log"),
