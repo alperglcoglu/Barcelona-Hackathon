@@ -634,8 +634,8 @@ Grid on the 13 games (mean spellF1, current config 0.428):
 
 With 3 s and cost 4 it removes predicted possessions (2708 → 2552). Since BAR-ATH already has too
 few, the switch cost and relief were re-searched with it: `SWITCH_COST 5.5`, `SWITCH_RELIEF 0.5`
-gives 0.434, better on all 13 games, with 2668 predicted possessions and fewer spurious changes
-(1538 against 1532 before, at a higher spellF1).
+gives 0.434, better on all 13 games, with 2668 predicted possessions (2708 before) and about the
+same number of spurious changes (1538 against 1532).
 
 `python -m possession.pipeline --set NAME=VALUE` overrides a config value for an ablation run, so
 both additions can be checked on BAR-ATH separately (`--set TRANSITION_CUE_TO=0`,
