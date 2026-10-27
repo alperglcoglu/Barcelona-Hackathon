@@ -39,6 +39,7 @@ FPS = 25
 SHORT = 4 * FPS
 LONG = 40 * FPS
 TRANSITION_SEARCH = 15 * FPS
+STEP = 2                  # draw every second frame: real-time playback at half the file size
 HOME_COLOUR, AWAY_COLOUR, BALL_COLOUR = "#d62728", "#1f77b4", "#ffffff"
 OUT_DIR = os.path.join(config.ROOT, "evaluation", "watch")
 
@@ -89,6 +90,7 @@ def moments(labels, events):
 def animate(data, labels, scores, tv, events, first, last, path):
     import matplotlib
     matplotlib.use("Agg")
+    matplotlib.rcParams["animation.embed_limit"] = 200   # MB; a 60 s clip is about 25 MB
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation
 
@@ -97,7 +99,7 @@ def animate(data, labels, scores, tv, events, first, last, path):
     from utils import draw_pitch
 
     length, width = data["pitch"]
-    figure, ax = plt.subplots(figsize=(10.5, 7.2))
+    figure, ax = plt.subplots(figsize=(10.5, 7.2), dpi=72)
     draw_pitch(ax, length, width)
     home = ax.scatter([], [], s=90, color=HOME_COLOUR, edgecolors="black", linewidths=0.5, zorder=3)
     away = ax.scatter([], [], s=90, color=AWAY_COLOUR, edgecolors="black", linewidths=0.5, zorder=3)
@@ -110,7 +112,7 @@ def animate(data, labels, scores, tv, events, first, last, path):
                                  if e["start_frame"] <= frame < e["end_frame"]}))[:90]
 
     def update(step):
-        t = first + step
+        t = first + step * STEP
         xy = players[t, :, :2]
         seen = ~np.isnan(xy[:, 0])
         home.set_offsets(xy[seen & (team == 0)].reshape(-1, 2))
@@ -124,9 +126,10 @@ def animate(data, labels, scores, tv, events, first, last, path):
                 "   no ball" if np.isnan(b[0]) else "", active_codes(t)))
         return home, away, ball, title
 
-    animation = FuncAnimation(figure, update, frames=last - first, interval=1000 / FPS)
+    animation = FuncAnimation(figure, update, frames=(last - first) // STEP,
+                              interval=1000 * STEP / FPS)
     with open(path, "w") as handle:
-        handle.write(animation.to_jshtml(fps=FPS))
+        handle.write(animation.to_jshtml(fps=FPS // STEP))
     plt.close(figure)
 
 
