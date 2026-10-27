@@ -120,3 +120,32 @@ def test_coverage_spans_matched_frames_only():
     out = {"clusters": [(50, 5)], "matched": matched, "offset": offset}
     covered = broadcast.coverage(out, 200)
     assert covered[60:90].all() and not covered[:60].any() and not covered[90:].any()
+
+
+def test_tv_lag_and_shift():
+    from possession import methods
+    n = 4000
+    labels = np.full(n, "H")
+    hidden = np.zeros(n, dtype=bool)
+    for start in range(100, 3800, 300):                     # 13 stoppages of 4 s
+        labels[start:start + 100] = "D"
+        hidden[start + 75:start + 175] = True                 # the feed leaves 3 s late
+    graded = np.ones(n, dtype=bool)
+    lag = methods.tv_lag(hidden, labels, graded)
+    assert lag == 75
+    shifted = methods.shift_earlier(hidden, lag)
+    assert shifted[100:200].all() and not shifted[200:400].any()
+
+
+def test_binned_evidence_weighs_long_stretches_more():
+    from possession import methods
+    n = 6000
+    labels = np.full(n, "H")
+    hidden = np.zeros(n, dtype=bool)
+    for start in range(0, 6000, 1000):
+        hidden[start:start + 50] = True                       # 2 s cutaways in play
+        labels[start + 300:start + 900] = "D"
+        hidden[start + 300:start + 900] = True                # 24 s stoppages off air
+    covered = graded = np.ones(n, dtype=bool)
+    evidence, table = methods.tv_binned_evidence(hidden, covered, labels, graded)
+    assert evidence[400] > 2 and evidence[10] < 0 and evidence[100] < 0

@@ -94,6 +94,16 @@ DEAD_WEIGHT = 1.26
 # already a log-likelihood ratio estimated from the match itself without labels, so 1.0 means
 # "take the estimate at face value". The sample games have no broadcast, so it cannot be tuned.
 TV_DEAD_WEIGHT = 1.0
+# [fixed] The feed's lag behind the stoppages is estimated per match (methods.tv_lag) from the
+# tracking-only model's D spells of at least TV_LAG_MIN_SPELL frames, if there are at least
+# TV_LAG_MIN_COUNT of them, and capped at TV_LAG_MAX frames. On BAR-ATH it came out near 3 s.
+TV_LAG_MIN_SPELL = 50
+TV_LAG_MIN_COUNT = 10
+TV_LAG_MAX = 250
+# [fixed] Edges, in seconds, of the not-shown stretch length bins (methods.tv_binned_evidence).
+# Chosen as natural breaks for a cutaway (< 3 s), a close-up (3-8 s), a short stoppage (8-20 s)
+# and a replay (>= 20 s), not searched.
+TV_LENGTH_BINS = (3, 8, 20)
 
 # -- learned evidence (methods.learned, possession/learned.py) ---------------------------------
 # A single frame's log-odds is clipped to this, so no one frame can force a change of state alone.
