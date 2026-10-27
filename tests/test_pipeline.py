@@ -112,7 +112,7 @@ def test_submission_roundtrip(tmp_path):
 
 # -- state model -----------------------------------------------------------------------------
 
-from possession import features, hmm, tagging_prior  # noqa: E402
+from possession import config, features, hmm, tagging_prior  # noqa: E402
 
 # Fixed costs, so these tests pin down the decoder's behaviour rather than the tuned values.
 COST = hmm.transition_costs(10.0, 25.0, 25.0)
@@ -223,3 +223,27 @@ def test_switch_scale_keeps_short_possession_with_clear_cue():
     scale[100, 1] = scale[112, 0] = 0.3                   # the ball shows each hand-over
     out = "".join(hmm.LETTERS[hmm.viterbi(scores, COST, switch_scale=scale)])
     assert out == "H" * 100 + "A" * 12 + "H" * 100
+
+
+def test_transition_cue_marks_the_tagged_team_after_the_start(monkeypatch):
+    monkeypatch.setattr(config, "TRANSITION_CUE_FROM", 12)
+    monkeypatch.setattr(config, "TRANSITION_CUE_TO", 150)
+    events = [{"code": "ATTACKING TRANSITION", "start_frame": 100, "end_frame": 400, "side": "A",
+               "tags": {}},
+              {"code": "DEFENSIVE TRANSITION", "start_frame": 100, "end_frame": 400, "side": "H",
+               "tags": {}}]
+    cue = tagging_prior.transition_cue(events, 1000)
+    assert cue[:, 0].sum() == 0
+    assert cue[100 + config.TRANSITION_CUE_FROM, 1] == 1 and cue[99, 1] == 0
+    assert cue[100 + config.TRANSITION_CUE_TO, 1] == 0
+
+
+def test_min_duration_drops_a_short_weak_spell_but_keeps_a_strong_one():
+    weak = np.r_[np.ones(100), -0.6 * np.ones(40), np.ones(100)]
+    strong = np.r_[np.ones(100), -np.ones(60), np.ones(100)]
+    for team, kept in ((weak, False), (strong, True)):
+        scores = _scores(team, -np.ones(len(team)))
+        plain = hmm.LETTERS[hmm.viterbi(scores, COST)]
+        short = hmm.LETTERS[hmm.viterbi_min_duration(scores, COST, 50, 8.0)]
+        assert "A" in plain
+        assert ("A" in short) == kept

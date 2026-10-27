@@ -49,3 +49,27 @@ def team_prior(events, n_frames, weight=None):
         end = min(n_frames, event["end_frame"])
         prior[start:end] += sign
     return np.clip(prior, -1.0, 1.0) * weight
+
+
+def transition_cue(events, n_frames):
+    """(n_frames, 2) hand-over cue for home / away from Smart Tagging's ATTACKING TRANSITION tags.
+
+    A transition begins with a change of possession to the tagged team. On BAR-ATH, half of these
+    tags have a team switch by the model 0.8-5.1 s (p10-p90) after their start, ten times the rate
+    at a random frame (possession.diagnose_tagging, no labels used). Tag starts run early, like the
+    kickoff tags that open about 3.5 s before the kickoff. So the tagged team gets a cue of 1 from
+    TRANSITION_CUE_FROM to TRANSITION_CUE_TO frames after the start, and methods.decode lowers the
+    cost of switching to it there exactly as for the ball cue (features.handover_cue). It only
+    makes a switch cheaper: the tracking evidence still has to show it.
+
+    DEFENSIVE TRANSITION tags are the same moments seen from the other team (identical counts and
+    timing), so they are not counted twice.
+    """
+    cue = np.zeros((n_frames, 2))
+    for event in events:
+        if event["code"] != "ATTACKING TRANSITION" or event["side"] is None:
+            continue
+        start = max(0, event["start_frame"] + config.TRANSITION_CUE_FROM)
+        end = min(n_frames, event["start_frame"] + config.TRANSITION_CUE_TO)
+        cue[start:end, 0 if event["side"] == "H" else 1] = 1.0
+    return cue

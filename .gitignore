@@ -24,6 +24,7 @@ evaluation/results/*.csv
 # information about the answer. They ship so that a fresh clone has something real to score.
 !evaluation/results/baseline_*.csv
 evaluation/reports/
+evaluation/watch/
 evaluation/scoreboard.csv
 
 # -- gated data --------------------------------------------------------------------------------

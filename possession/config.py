@@ -100,10 +100,23 @@ FROM_DEAD_COST = 48.2      # D -> alive
 # team at a frame costs SWITCH_COST * (1 - SWITCH_RELIEF * cue), so a frame where the ball shows
 # that team taking it clearly (cue 1) costs only (1 - SWITCH_RELIEF) of the full switch. 0 turns it
 # off. The cue is spread over +/- SWITCH_CUE_SPAN frames. Grid-searched on the 13 tuning games
-# with the rest of the config fixed (section 10): relief 0.4 with the switch cost raised to 6.0, so
-# a hand-over with clear ball evidence costs 3.6 and one without costs 6.0.
+# with the rest of the config fixed (section 10): relief 0.4 with the switch cost raised to 6.0.
+# A hand-over with clear ball evidence costs 3.6 and one without 6.0.
 SWITCH_RELIEF = 0.4
 SWITCH_CUE_SPAN = 0
+# [fixed] Smart Tagging transition cue (tagging_prior.transition_cue): frames after an ATTACKING
+# TRANSITION tag's start where switching to its team gets the same relief as a clear ball cue.
+# Set from the model's own switches on BAR-ATH (p10 0.8 s, p90 5.1 s after the start; no labels).
+# The tuning games have no Smart Tagging, so this cannot be tuned there. Off (TO = 0): it lost on
+# BAR-ATH's public window (section 11); 150 is the window that was tried.
+TRANSITION_CUE_FROM = 12
+TRANSITION_CUE_TO = 0
+# Soft minimum duration (hmm.viterbi_min_duration, docs/TECHNICAL.md section 11): a possession
+# shorter than MIN_SPELL frames pays SHORT_SPELL_COST when it ends. 0 turns it off.
+# Off: MIN_SPELL 75 with cost 4.0 won on the 13 tuning games but lost on BAR-ATH's public window
+# (section 11).
+MIN_SPELL = 0
+SHORT_SPELL_COST = 0.0
 # [tuned] Scale of the team evidence and of the dead-ball evidence.
 TEAM_WEIGHT = 0.445
 DEAD_WEIGHT = 1.26
