@@ -88,22 +88,34 @@ DEAD_GAP_SCORE = 1.88      # [tuned] dead-ball evidence per frame inside such a 
 TAG_TEAM_SHARE = 0.15
 
 # [tuned] Transition penalties, in the same units as the weighted evidence (see hmm.py). With
-# TEAM_WEIGHT 0.445 a hand-over needs about 13 frames of full control evidence (6.0 / 0.445), or
-# about 8 where the ball shows the new team taking it (3.6 / 0.445, SWITCH_RELIEF below), and a
+# TEAM_WEIGHT 0.445 a hand-over needs about 12 frames of full control evidence (5.5 / 0.445), or
+# about 6 where the ball shows the new team taking it (2.75 / 0.445, SWITCH_RELIEF below), and a
 # short possession by the other team inside ours needs twice that. A touch adds
 # 0.65 over 9 frames, which shortens that. Leaving a dead ball is expensive (48.2), so a restart is
 # only declared once play has clearly resumed.
-SWITCH_COST = 6.0          # H <-> A, before SWITCH_RELIEF (it was 5.12 without it)
+SWITCH_COST = 5.5          # H <-> A, before SWITCH_RELIEF (5.12 without it, 6.0 before MIN_SPELL)
 TO_DEAD_COST = 4.76        # alive -> D
 FROM_DEAD_COST = 48.2      # D -> alive
 # Evidence-dependent switch cost (features.handover_cue, docs/TECHNICAL.md section 10). Entering a
 # team at a frame costs SWITCH_COST * (1 - SWITCH_RELIEF * cue), so a frame where the ball shows
 # that team taking it clearly (cue 1) costs only (1 - SWITCH_RELIEF) of the full switch. 0 turns it
 # off. The cue is spread over +/- SWITCH_CUE_SPAN frames. Grid-searched on the 13 tuning games
-# with the rest of the config fixed (section 10): relief 0.4 with the switch cost raised to 6.0, so
-# a hand-over with clear ball evidence costs 3.6 and one without costs 6.0.
-SWITCH_RELIEF = 0.4
+# with the rest of the config fixed (section 10): relief 0.4 with the switch cost raised to 6.0.
+# Retuned with MIN_SPELL (section 11) to relief 0.5 and cost 5.5: a hand-over with clear ball
+# evidence costs 2.75 and one without 5.5, plus SHORT_SPELL_COST if the possession is short.
+SWITCH_RELIEF = 0.5
 SWITCH_CUE_SPAN = 0
+# [fixed] Smart Tagging transition cue (tagging_prior.transition_cue): frames after an ATTACKING
+# TRANSITION tag's start where switching to its team gets the same relief as a clear ball cue.
+# Set from the model's own switches on BAR-ATH (p10 0.8 s, p90 5.1 s after the start; no labels).
+# The tuning games have no Smart Tagging, so this cannot be tuned there.
+TRANSITION_CUE_FROM = 12
+TRANSITION_CUE_TO = 150
+# Soft minimum duration (hmm.viterbi_min_duration, docs/TECHNICAL.md section 11): a possession
+# shorter than MIN_SPELL frames pays SHORT_SPELL_COST when it ends. 0 turns it off.
+# Grid-searched on the 13 tuning games together with the switch cost (section 11).
+MIN_SPELL = 75
+SHORT_SPELL_COST = 4.0
 # [tuned] Scale of the team evidence and of the dead-ball evidence.
 TEAM_WEIGHT = 0.445
 DEAD_WEIGHT = 1.26

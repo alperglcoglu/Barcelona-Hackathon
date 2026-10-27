@@ -578,3 +578,65 @@ than half the cost, adds spurious changes faster than it finds true ones. The ga
 but consistent across games, and it adds possessions (2708 against 2584) without adding many
 spurious changes, which is the direction BAR-ATH needs. Whether it beats the frozen file on BAR-ATH
 is decided by the local run, as always.
+
+## 11. Smart Tagging transitions and a soft minimum possession length
+
+### Transition tags as turnover hints
+
+`python -m possession.diagnose_tagging` compares the tags with the model's own labels over the
+whole match (no ground truth). Findings on BAR-ATH:
+
+- Tags come in mirrored pairs: every ATTACKING TRANSITION has a DEFENSIVE TRANSITION with the same
+  times for the other team, and the same holds for Build Up / Defending in Attacking Third,
+  Progression / Defending in Middle Third, Creating Chances / Defending in Defensive Third.
+- Team agreement with the model is 74-95% depending on the code (Build Up and Progression highest).
+- **Transitions:** for half of the ATTACKING TRANSITION tags, the model switches team within 3 s of
+  the tag's start, against 10% for a random frame. The switch comes 0.8-5.1 s after the start
+  (p10-p90). Tag starts run early, like the kickoff tags (3.3 s, which matches the organisers'
+  notebook).
+- **Set pieces** sit 2-7 s before the model's restarts, with a 9 s spread. That is too loose to
+  place a restart, so they are not used.
+
+`tagging_prior.transition_cue` gives the tagged team a hand-over cue of 1 from 0.5 s to 6 s after
+each ATTACKING TRANSITION start, combined with the ball cue (maximum), so a switch there gets the
+same relief as one the ball shows clearly. It never forces a switch, because the tracking evidence
+still has to pay for it. The window comes from the model's own switches, not from labels. The
+tuning games have no Smart Tagging, so it could not be tuned and is fixed.
+
+### Soft minimum duration (the duration part of a semi-Markov model)
+
+On the 13 tuning games, predicted possessions by length (two degradations each):
+
+| length | true | predicted | predicted and matched at IoU 0.5 |
+|---|---|---|---|
+| < 2 s | 1614 | 251 | 7% |
+| 2-4 s | 1370 | 621 | 22% |
+| 4-8 s | 1684 | 1258 | 39% |
+| 8-15 s | 1492 | 1325 | 61% |
+| 15-30 s | 1312 | 1199 | 71% |
+| > 30 s | 644 | 763 | 78% |
+
+Short predicted possessions are mostly wrong, but a hard minimum would also delete the few right
+ones and the short true possessions the evidence does show. `hmm.viterbi_min_duration` adds a soft
+minimum instead: a possession shorter than `MIN_SPELL` frames pays `SHORT_SPELL_COST` once, when it
+ends. It is exact, not a post-filter: each team gets a "young" state next to the usual one, and
+the best young spell to leave from is a sliding-window maximum, so decoding stays linear in the
+number of frames (0.4 s per half against 0.2 s). A brute-force test over all paths of small
+sequences checks that it finds the optimum.
+
+Grid on the 13 games (mean spellF1, current config 0.428):
+
+| MIN_SPELL | SHORT_SPELL_COST 2 | 4 | 8 |
+|---|---|---|---|
+| 2 s | 0.431 | 0.431 | 0.432 |
+| 3 s | 0.432 | 0.432 | 0.433 |
+| 4 s | 0.431 | 0.430 | 0.430 |
+
+With 3 s and cost 4 it removes predicted possessions (2708 → 2552). Since BAR-ATH already has too
+few, the switch cost and relief were re-searched with it: `SWITCH_COST 5.5`, `SWITCH_RELIEF 0.5`
+gives 0.434, better on all 13 games, with 2668 predicted possessions and fewer spurious changes
+(1538 against 1532 before, at a higher spellF1).
+
+`python -m possession.pipeline --set NAME=VALUE` overrides a config value for an ablation run, so
+both additions can be checked on BAR-ATH separately (`--set TRANSITION_CUE_TO=0`,
+`--set MIN_SPELL=0`).

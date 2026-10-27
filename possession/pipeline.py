@@ -58,7 +58,16 @@ def main(argv=None):
                         help="state_model_tv refinements: full, shift, bins or plain (ablation)")
     parser.add_argument("--check-baseline", action="store_true",
                         help="only verify the loader against the organisers' baseline file")
+    parser.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                        help="override one possession/config.py value (ablation), repeatable")
     args = parser.parse_args(argv)
+    for item in args.set:
+        name, value = item.split("=", 1)
+        if not hasattr(config, name):
+            parser.error("config has no {}".format(name))
+        setattr(config, name, type(getattr(config, name))(float(value))
+                if isinstance(getattr(config, name), (int, float)) else value)
+        print("  config {} = {}".format(name, getattr(config, name)))
 
     data = io_atd.load(GAME, args.data_dir, use_cache=not args.no_cache)
     if args.check_baseline:

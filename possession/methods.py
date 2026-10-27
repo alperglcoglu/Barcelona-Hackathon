@@ -78,6 +78,8 @@ def frame_scores(data, events=None):
         team = team + tagging_prior.team_prior(events, len(team))
     dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"])
     cue = features.handover_cue(ball, data["players"], data["team"])
+    if events:
+        cue = np.maximum(cue, tagging_prior.transition_cue(events, len(cue)))
     return np.column_stack([team / 2.0, -team / 2.0, dead, cue])
 
 
@@ -96,8 +98,12 @@ def decode(scores, halves):
         scale = 1.0 - config.SWITCH_RELIEF * scores[:, 3:]
     labels = np.full(len(scores), "X", dtype="<U1")
     for first, last in halves:
-        path = hmm.viterbi(scores[first:last + 1, :3], cost,
-                           switch_scale=None if scale is None else scale[first:last + 1])
+        part = None if scale is None else scale[first:last + 1]
+        if config.MIN_SPELL > 1 and config.SHORT_SPELL_COST > 0:
+            path = hmm.viterbi_min_duration(scores[first:last + 1, :3], cost, config.MIN_SPELL,
+                                            config.SHORT_SPELL_COST, switch_scale=part)
+        else:
+            path = hmm.viterbi(scores[first:last + 1, :3], cost, switch_scale=part)
         labels[first:last + 1] = hmm.LETTERS[path]
     return labels
 
