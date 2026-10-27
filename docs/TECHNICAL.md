@@ -509,7 +509,18 @@ thirteen games (two degradations each):
 | previous config (Metrica only) | 0.619 | 0.363 | 0.422 | not tuned on SkillCorner |
 | retuned on all 13 | 0.582 | 0.385 | 0.430 | 0.428 |
 
-The retuned configuration trades a little on Metrica's coarse labels for more on the ten matches
-that look like BAR-ATH. The main changes: a wider control radius (`CONTROL_SIGMA` 0.8 → 2.39 m,
+The retuned configuration traded a little on Metrica's coarse labels for more on the ten matches
+that look like BAR-ATH. The main changes were a wider control radius (`CONTROL_SIGMA` 0.8 → 2.39 m,
 because the automatic tracking puts the ball 1-2 m from its holder), short ball gaps bridged up to
 0.6 s, only gaps of 4 s or more read as stoppages, and a stronger width evidence (0.07 → 0.37).
+
+**Result on BAR-ATH: not adopted.** On the public five minutes (sanity check only, never tuned on)
+the retuned configuration scored spellF1 0.446 / macroF1 0.849, against 0.489 / 0.829 for the
+frozen one. Team accuracy on alive frames rose (0.818 → 0.862) and so did macroF1, but it predicted
+9 possessions instead of 10 (truth: 17), so the spells merged even more and spellF1, the ranking
+metric, fell. The rule is that a change must beat the frozen file, so `possession/config.py` keeps
+the frozen values. The SkillCorner loader and `--games all` stay as tuning infrastructure.
+
+The lesson: a better frame-level fit does not cure undersegmentation. A search that rewards
+spellF1 on SkillCorner matches with BAR-ATH-like granularity, or a model change that makes team
+switches cheaper where the evidence supports them, is needed instead of more of the same tuning.
