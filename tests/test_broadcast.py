@@ -149,3 +149,4 @@ def test_binned_evidence_weighs_long_stretches_more():
     covered = graded = np.ones(n, dtype=bool)
     evidence, table = methods.tv_binned_evidence(hidden, covered, labels, graded)
     assert evidence[400] > 2 and evidence[10] < 0 and evidence[100] < 0
+

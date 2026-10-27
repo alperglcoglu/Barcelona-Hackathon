@@ -57,6 +57,15 @@ TOUCH_DV = 4.0             # [tuned] m/s of velocity change that counts as a tou
 TOUCH_RADIUS = 2.0         # [tuned] metres: the player's "possession zone"
 TOUCH_SPAN = 4             # [fixed] frames averaged on each side of the touch
 
+# Ball-free team evidence from the teams' widths (features.width_evidence), added to the ball-based
+# team evidence before TEAM_WEIGHT. 0 switches it off. Tuned with the rest held at their values:
+# a grid over weight and scale, then a 40-draw local search that found nothing better. Sample-game
+# spellF1 0.587 -> 0.618 (all three games improve); leave-one-game-out 0.598.
+WIDTH_WEIGHT = 0.07        # [tuned]
+WIDTH_SCALE = 1.5          # [tuned] metres of width difference that count as clear
+WIDTH_SMOOTH = 25          # [fixed] +/- 1 s
+WIDTH_MIN_PLAYERS = 5      # [fixed] fewer tracked players than this: no width evidence
+
 # Dead ball: a pivot on the players' mean speed, divided by the match's median pace (about 1.6 m/s
 # in the sample games). Above the pivot counts toward alive, below it toward dead. In the sample
 # games the ratio is about 1.25 in play and about 0.65 in stoppages.

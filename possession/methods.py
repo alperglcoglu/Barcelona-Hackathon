@@ -68,7 +68,10 @@ def frame_scores(data, events=None):
     frame with no information scores 0 everywhere and so never causes a change of state.
     """
     ball = features.interpolate_ball(data["ball"])
-    team = config.TEAM_WEIGHT * features.team_evidence(ball, data["players"], data["team"])
+    team = features.team_evidence(ball, data["players"], data["team"])
+    if config.WIDTH_WEIGHT > 0:
+        team = team + config.WIDTH_WEIGHT * features.width_evidence(data["players"], data["team"])
+    team = config.TEAM_WEIGHT * team
     if events:
         team = team + tagging_prior.team_prior(events, len(team))
     dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"])

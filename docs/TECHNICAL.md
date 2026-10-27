@@ -451,3 +451,32 @@ cost spellF1 alone and together with the lag. `shift` is the default. In fairnes
 `shift` and `full` uses this window, the gap between them is within its noise band (17 possessions),
 and both were designed before it was looked at. `shift` is also the simpler of the two, with no
 extra constants, which is the reason to prefer it independently of the window.
+
+## 8. Ball-free team evidence: the teams' widths
+
+The ball is missing on 41% of graded frames, and there the ball-based team evidence is silent: the
+model can only keep the last team. Which team has the ball also shows in the players' shape. The
+team in possession spreads across the pitch to open passing lanes, and the defending team narrows
+to close them (width in attack, compactness in defence). PathCRF-style models read possession from
+the players alone for the same reason.
+
+Candidates were measured on the sample games, by how often the sign of the home-minus-away
+difference agrees with the team in possession on alive frames:
+
+| feature (home minus away) | agrees with the possessing team |
+|---|---|
+| width (std of y across the pitch) | 81-83% in all three games |
+| spread (sqrt of x and y variance) | 71-83% |
+| length (std of x) | 58-77% |
+| block position (centroid along the home attack direction) | 59-70% |
+| forward speed of the centroid | 58-66% |
+
+Width is the most accurate and the most stable across games, and it needs no attacking direction,
+so it is the one used (`features.width_evidence`): the difference of the two teams' y standard
+deviations, averaged over ±1 s, squashed with `tanh(diff / WIDTH_SCALE)` and added to the team
+evidence with weight `WIDTH_WEIGHT`. It is weak per frame on purpose: 0.07 against 1 for a player
+on the ball, so it decides only where the ball says nothing for many seconds.
+
+Sample games (tuned the usual way, section 3): spellF1 0.587 → 0.618, with all three games
+improving (0.618 → 0.645, 0.591 → 0.647, 0.553 → 0.564), and leave-one-game-out 0.598 against
+about 0.58 before.
