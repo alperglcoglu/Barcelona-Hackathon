@@ -21,7 +21,7 @@ sys.path.insert(0, config.ROOT)
 from games import GAME, source_frames  # noqa: E402
 
 # Params
-DEFAULT_METHOD = "state_model"
+DEFAULT_METHOD = "state_model_tv"
 BASELINE_REFERENCE = os.path.join(config.RESULTS_DIR, "baseline_smooth50.csv")
 
 

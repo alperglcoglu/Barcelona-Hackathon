@@ -126,7 +126,7 @@ current penalties, leave-one-game-out gives 0.466, against 0.589 for the hand-wr
 The collective features do carry signal: the possessing team is more spread out, and the defending team runs faster. But the event-derived labels are coarse, and in the
 sample data "ball missing" mostly means "ball out of play", which a learned model exploits and
 which would not transfer to BAR-ATH, so we removed it as a feature. We keep the hand-written
-evidence as the submission (`--method state_model`, the default) and `--method learned` as a
+evidence as the tracking-only model (`--method state_model`) and `--method learned` as a
 documented alternative.
 
 ## 2. Assets used, and assets dropped
@@ -282,9 +282,9 @@ python -m tuning.train
 The run is deterministic. No randomness, network access or state outside `data/` is involved, so
 the same data always gives the same file.
 
-## 7. Experiment in progress: the TV feed as a dead-ball signal
+## 7. The TV feed as a dead-ball signal
 
-Not part of the frozen submission; `python -m possession.pipeline --method state_model_tv` uses it. `possession/broadcast.py` builds it; `python -m
+Part of the submission since 27 October 2026: `state_model_tv` is the default method. `possession/broadcast.py` builds it; `python -m
 possession.broadcast` prints aggregate numbers only and caches the result under `data/cache/`.
 
 ### Why
@@ -388,3 +388,16 @@ about 0.64 and 0.15, which gives +1.45 per not-shown frame and -0.86 per shown f
 same order as the long-ball-gap evidence (1.88 per frame) the tuning chose. The model's labels are
 noisy, which pulls the two rates towards each other, so this ratio is if anything an underestimate.
 `TV_DEAD_WEIGHT` (1.0) scales it; it cannot be tuned because the sample games have no broadcast.
+
+### Result
+
+Public window, as a sanity check (no parameter was chosen on it; `TV_DEAD_WEIGHT` stayed at 1.0):
+
+| | spellF1 | macroF1 | D recall | possessions (truth 17) |
+|---|---|---|---|---|
+| `state_model` (previous submission) | 0.325 | 0.658 | 40% | 15 |
+| `state_model_tv` | 0.413 | 0.741 | 86% | 13 |
+
+On the whole match the calibration found the feed away from live play on 62.2% of model-dead and
+12.9% of model-alive frames. The output has 188 possessions and 78,925 `D` frames. The cost is
+some alive frames now called `D` (D precision 0.62), which is the next thing to work on.

@@ -40,7 +40,7 @@ possession/             our code
   tagging_prior.py      weak team evidence from Smart Tagging phases
   hmm.py                three-state (H/A/D) Viterbi with transition penalties
   learned.py            alternative: logistic evidence trained on other games
-  methods.py            baseline (official floor), state_model (default), learned
+  methods.py            baseline (official floor), state_model, state_model_tv (default), learned
   submission.py         write and check the frame,label CSV
   pipeline.py           the single command that regenerates the submission
   diagnose.py           aggregate-only signal checks on the real data
