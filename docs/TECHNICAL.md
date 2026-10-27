@@ -480,3 +480,36 @@ on the ball, so it decides only where the ball says nothing for many seconds.
 Sample games (tuned the usual way, section 3): spellF1 0.587 → 0.618, with all three games
 improving (0.618 → 0.645, 0.591 → 0.647, 0.553 → 0.564), and leave-one-game-out 0.598 against
 about 0.58 before.
+
+## 9. A wider tuning set: SkillCorner's open A-League matches
+
+Three tuning games is thin, and Metrica's event-derived labels are coarser than the competition's:
+about 230 possessions per match in game 1 and 2, against roughly 320 implied by the 17 possessions
+in BAR-ATH's public five minutes. A model tuned only on them merges possessions.
+
+SkillCorner publishes twenty 2024-25 A-League matches with broadcast tracking and, on every frame,
+the team in possession (github.com/SkillCorner/opendata). Ten are added (`tuning/skillcorner.py`,
+fetched by `tuning/fetch_skillcorner.sh`):
+
+- **Labels.** A frame with a team is `H` or `A`; a frame with none is `D`. Checked before use: the
+  players move at 1.1 m/s on no-team frames and 2.3 m/s on team frames, the stoppage/play ratio of
+  Metrica's games, and no-team runs last a median 17 s. The matches have about 350 possessions
+  each, close to BAR-ATH's granularity.
+- **Tracking.** SkillCorner's ball is missing on about 40% of in-play frames, like BAR-ATH (40.7%).
+  Positions are moved to a corner origin and resampled from 10 to 25 fps, so every frame-based
+  constant keeps its meaning. `degrade()` then adds the same noise as to Metrica's games.
+- **Not the DFL data.** The DFL/Sportec open matches were the first choice, but their host
+  (figshare) could not be reached from the development environment; SkillCorner's are on GitHub.
+
+`python -m tuning.search --games all --outer 15 --refine 40` then tuned every parameter on all
+thirteen games (two degradations each):
+
+| | Metrica (3) | SkillCorner (10) | all 13 | leave-one-game-out |
+|---|---|---|---|---|
+| previous config (Metrica only) | 0.619 | 0.363 | 0.422 | not tuned on SkillCorner |
+| retuned on all 13 | 0.582 | 0.385 | 0.430 | 0.428 |
+
+The retuned configuration trades a little on Metrica's coarse labels for more on the ten matches
+that look like BAR-ATH. The main changes: a wider control radius (`CONTROL_SIGMA` 0.8 → 2.39 m,
+because the automatic tracking puts the ball 1-2 m from its holder), short ball gaps bridged up to
+0.6 s, only gaps of 4 s or more read as stoppages, and a stronger width evidence (0.07 → 0.37).

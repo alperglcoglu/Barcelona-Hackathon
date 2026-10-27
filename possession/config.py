@@ -32,37 +32,38 @@ TEAM_NAME = "team"
 BASELINE_WINDOW = 50
 
 # -- state model (methods.state_model) ----------------------------------------------------------
-# Values marked [tuned] come from tuning/search.py on Metrica's public sample games (other matches,
-# degraded to look like automatic tracking). Its best configuration over all three games is used
-# here, rounded. Nothing is fitted to BAR-ATH. Values marked [fixed] were set by reasoning and not
+# Values marked [tuned] come from tuning/search.py --games all: Metrica's three public sample games
+# and ten of SkillCorner's open A-League matches (other matches, degraded to look like automatic
+# tracking). Its best configuration over all thirteen games is used here, rounded. Nothing is fitted to BAR-ATH. Values marked [fixed] were set by reasoning and not
 # searched. Distances are metres, speeds m/s, times frames.
 
-# [tuned] Ball gaps up to this long are bridged with a straight line. The tuning keeps this tiny:
-# longer gaps stay missing, because in this data they are mostly stoppages (see DEAD_GAP_MIN).
-BALL_MAX_GAP = 1
+# [tuned] Ball gaps up to this long (0.6 s) are bridged with a straight line. Longer gaps stay
+# missing, because in this data they are mostly stoppages (see DEAD_GAP_MIN).
+BALL_MAX_GAP = 15
 # [fixed] Ball positions are averaged over +/- this many frames before differencing into a speed.
 BALL_SPEED_SMOOTH = 2
 
-# [tuned] Control: a player's "closeness" to the ball is exp(-d^2 / 2 sigma^2). At 0.8 m that gives
-# about 0.46 at 1 m (on the ball) and practically 0 at 2.5 m (marking distance, not control).
-CONTROL_SIGMA = 0.8
+# [tuned] Control: a player's "closeness" to the ball is exp(-d^2 / 2 sigma^2). At 2.39 m that gives
+# about 0.92 at 1 m, 0.58 at 2.5 m and 0.06 at 5.7 m: wide, because the automatic tracking puts
+# the ball 1-2 m from its holder (BAR-ATH p50 1.9 m), and the nearest team still wins the
+# difference.
+CONTROL_SIGMA = 2.39
 # [tuned] A ball at this speed counts half as much as a ball at rest, so a pass going past a
 # player does not count as that player's control.
-CONTROL_BALL_SPEED = 15.7
+CONTROL_BALL_SPEED = 7.34
 
 # [tuned] Touch evidence (features.touch_evidence, after Vidal-Codina et al. 2022): a change of the
 # ball's velocity next to a player is a touch by that player. 0 switches it off.
-TOUCH_WEIGHT = 0.65
-TOUCH_DV = 4.0             # [tuned] m/s of velocity change that counts as a touch
-TOUCH_RADIUS = 2.0         # [tuned] metres: the player's "possession zone"
+TOUCH_WEIGHT = 1.32
+TOUCH_DV = 2.0             # [tuned] m/s of velocity change that counts as a touch
+TOUCH_RADIUS = 1.52        # [tuned] metres: the player's "possession zone"
 TOUCH_SPAN = 4             # [fixed] frames averaged on each side of the touch
 
 # Ball-free team evidence from the teams' widths (features.width_evidence), added to the ball-based
-# team evidence before TEAM_WEIGHT. 0 switches it off. Tuned with the rest held at their values:
-# a grid over weight and scale, then a 40-draw local search that found nothing better. Sample-game
-# spellF1 0.587 -> 0.618 (all three games improve); leave-one-game-out 0.598.
-WIDTH_WEIGHT = 0.07        # [tuned]
-WIDTH_SCALE = 1.5          # [tuned] metres of width difference that count as clear
+# team evidence before TEAM_WEIGHT. 0 switches it off. Tuned with everything else (docs/TECHNICAL.md
+# sections 8 and 9).
+WIDTH_WEIGHT = 0.367       # [tuned]
+WIDTH_SCALE = 4.49         # [tuned] metres of width difference that count as clear
 WIDTH_SMOOTH = 25          # [fixed] +/- 1 s
 WIDTH_MIN_PLAYERS = 5      # [fixed] fewer tracked players than this: no width evidence
 
@@ -70,14 +71,14 @@ WIDTH_MIN_PLAYERS = 5      # [fixed] fewer tracked players than this: no width e
 # in the sample games). Above the pivot counts toward alive, below it toward dead. In the sample
 # games the ratio is about 1.25 in play and about 0.65 in stoppages.
 SPEED_SMOOTH = 25          # [fixed] +/- 1 s moving mean of the players' mean speed
-DEAD_SPEED_RATIO = 0.62    # [tuned] pivot, as a share of the match's median pace
-DEAD_SPEED_WEIGHT = 2.1    # [tuned] log-odds per unit of that ratio below the pivot
-DEAD_SPEED_CLIP = 1.1      # [tuned] cap on one frame's speed evidence, either way
+DEAD_SPEED_RATIO = 0.67    # [tuned] pivot, as a share of the match's median pace
+DEAD_SPEED_WEIGHT = 1.67   # [tuned] log-odds per unit of that ratio below the pivot
+DEAD_SPEED_CLIP = 1.91     # [tuned] cap on one frame's speed evidence, either way
 DEAD_NO_PLAYERS = 1.0      # [fixed] no players tracked at all (camera off the pitch): lean dead
 OUT_MARGIN = 0.5           # [fixed] metres beyond a line before the ball counts as out
 DEAD_OUT_SCORE = 3.0       # [fixed] ball visibly out of play: strong, per frame
-DEAD_GAP_MIN = 16          # [tuned] a ball gap at least this long (frames) counts as a stoppage
-DEAD_GAP_SCORE = 1.88      # [tuned] dead-ball evidence per frame inside such a gap
+DEAD_GAP_MIN = 95          # [tuned] a ball gap at least this long (frames) counts as a stoppage
+DEAD_GAP_SCORE = 1.53      # [tuned] dead-ball evidence per frame inside such a gap
 
 # [fixed] Weak team evidence from the Smart Tagging phases, per frame, as a share of TEAM_WEIGHT
 # (the most one frame of clear tracking control can give). The sample games have no Smart Tagging,
@@ -88,16 +89,16 @@ DEAD_GAP_SCORE = 1.88      # [tuned] dead-ball evidence per frame inside such a 
 TAG_TEAM_SHARE = 0.15
 
 # [tuned] Transition penalties, in the same units as the weighted evidence (see hmm.py). With
-# TEAM_WEIGHT 0.445 a hand-over needs about 12 frames of full control evidence (5.12 / 0.445), and
-# a short possession by the other team inside ours needs about 23 (2 x 5.12 / 0.445). A touch adds
-# 0.65 over 9 frames, which shortens that. Leaving a dead ball is expensive (48.2), so a restart is
-# only declared once play has clearly resumed.
-SWITCH_COST = 5.12         # H <-> A
-TO_DEAD_COST = 4.76        # alive -> D
-FROM_DEAD_COST = 48.2      # D -> alive
+# TEAM_WEIGHT 0.357 a hand-over needs about 17 frames of full control evidence (6.03 / 0.357), and
+# a short possession by the other team inside ours needs about 34. A touch adds 1.32 over 9
+# frames, which shortens that. Leaving a dead ball is expensive (58.8), so a restart is only
+# declared once play has clearly resumed.
+SWITCH_COST = 6.03         # H <-> A
+TO_DEAD_COST = 3.29        # alive -> D
+FROM_DEAD_COST = 58.8      # D -> alive
 # [tuned] Scale of the team evidence and of the dead-ball evidence.
-TEAM_WEIGHT = 0.445
-DEAD_WEIGHT = 1.26
+TEAM_WEIGHT = 0.357
+DEAD_WEIGHT = 1.35
 
 # [fixed] Scale of the TV-feed dead-ball evidence (methods.state_model_tv). That evidence is
 # already a log-likelihood ratio estimated from the match itself without labels, so 1.0 means

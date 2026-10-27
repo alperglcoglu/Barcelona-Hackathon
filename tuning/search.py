@@ -5,6 +5,7 @@
     python -m tuning.search --method learned          # learned evidence (methods.learned)
     python -m tuning.search --evaluate                # score possession/config.py as it is
     python -m tuning.search --outer 40 --refine 40    # random search, then a local search
+    python -m tuning.search --games all               # also SkillCorner's matches (fetch_skillcorner.sh)
 
 Protocol:
 
@@ -28,10 +29,11 @@ import pickle
 import numpy as np
 
 from possession import config, learned, methods
-from . import metrics, sample_data
+from . import metrics, sample_data, skillcorner
 
 # Params
 CACHE = os.path.join(config.CACHE_DIR, "sample_games_v2.pkl")
+SKILLCORNER_CACHE = os.path.join(config.CACHE_DIR, "skillcorner_games_v1.pkl")
 # Every game is degraded once per scenario: (seed, share of dead-time ball gaps filled). The two
 # scenarios bracket how often the BAR-ATH tracker sees the ball during stoppages (see
 # sample_data.show_dead_ball). Changing degrade() changes every score below.
@@ -75,18 +77,36 @@ DECODE_SPACE = {
 }
 
 
-def load_games():
-    """{name: (data, halves, gt)} for the three sample games, cached after the first parse."""
+def load_games(which="metrica"):
+    """{name: (data, halves, gt)}: Metrica's three sample games, and with which="all" also the
+    SkillCorner matches on disk (tuning/skillcorner.py). Each set is cached after the first parse."""
     if os.path.isfile(CACHE):
         with open(CACHE, "rb") as handle:
-            return pickle.load(handle)
-    games = {
-        "game1": sample_data.load_csv_game(1),
-        "game2": sample_data.load_csv_game(2),
-        "game3": sample_data.load_epts_game(),
-    }
+            games = pickle.load(handle)
+    else:
+        games = {
+            "game1": sample_data.load_csv_game(1),
+            "game2": sample_data.load_csv_game(2),
+            "game3": sample_data.load_epts_game(),
+        }
+        os.makedirs(config.CACHE_DIR, exist_ok=True)
+        with open(CACHE, "wb") as handle:
+            pickle.dump(games, handle)
+    if which == "all":
+        games = dict(games, **load_skillcorner())
+    return games
+
+
+def load_skillcorner():
+    ids = skillcorner.match_ids()
+    if os.path.isfile(SKILLCORNER_CACHE):
+        with open(SKILLCORNER_CACHE, "rb") as handle:
+            games = pickle.load(handle)
+        if sorted(games) == sorted("sc{}".format(m) for m in ids):
+            return games
+    games = {"sc{}".format(m): skillcorner.load_game(m) for m in ids}
     os.makedirs(config.CACHE_DIR, exist_ok=True)
-    with open(CACHE, "wb") as handle:
+    with open(SKILLCORNER_CACHE, "wb") as handle:
         pickle.dump(games, handle)
     return games
 
@@ -181,13 +201,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--method", default="state_model", choices=sorted(EVIDENCE_SPACE))
     parser.add_argument("--evaluate", action="store_true", help="score config.py as it is")
+    parser.add_argument("--games", default="metrica", choices=("metrica", "all"),
+                        help="all = Metrica's three games plus the SkillCorner matches")
     parser.add_argument("--outer", type=int, default=N_OUTER)
     parser.add_argument("--inner", type=int, default=N_INNER)
     parser.add_argument("--refine", type=int, default=N_REFINE,
                         help="extra evidence draws around the best so far (local search)")
     args = parser.parse_args()
 
-    cases = degraded_set(load_games())
+    cases = degraded_set(load_games(args.games))
     space = EVIDENCE_SPACE[args.method]
     start = (current(space), current(DECODE_SPACE))
     scores = raw_scores(args.method, start[0], cases)
