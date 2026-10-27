@@ -19,6 +19,7 @@ sys.path.insert(0, config.ROOT)
 from games import GAME, half_video_blocks  # noqa: E402
 
 HOME, AWAY, NOBODY = 0, 1, -1
+FPS = 25
 
 
 def nearest_team(ball, players, team):
@@ -122,24 +123,115 @@ def tv_dead_evidence(shown, covered, labels, graded):
     return evidence, (hidden_dead, hidden_alive)
 
 
-def state_model_tv(data, events=None, halves=None, tv=None):
+def _true_runs(flags):
+    """[(start, end_exclusive)] of the True runs."""
+    edges = np.diff(np.concatenate(([0], flags.astype(np.int8), [0])))
+    return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)))
+
+
+def tv_lag(hidden, labels, graded):
+    """Frames by which the feed's cutaways trail the stoppages, estimated without labels.
+
+    For every tracking-only D spell of at least TV_LAG_MIN_SPELL frames, the delay from its start
+    to the start of the first not-shown stretch overlapping it. The median, clipped to
+    [0, TV_LAG_MAX]. The start of a model D spell is used rather than its end because entering D
+    is cheap in the Viterbi (TO_DEAD_COST) while leaving it is expensive (FROM_DEAD_COST), so the
+    model's stoppage starts are roughly on time and its restarts are late.
+    """
+    hidden_runs = _true_runs(hidden)
+    hidden_starts = np.array([h0 for h0, _ in hidden_runs])
+    hidden_ends = np.array([h1 for _, h1 in hidden_runs])
+    delays = []
+    for d0, d1 in _true_runs(graded & (labels == "D")):
+        if d1 - d0 < config.TV_LAG_MIN_SPELL or not len(hidden_runs):
+            continue
+        overlap = np.flatnonzero((hidden_starts < d1) & (hidden_ends > d0))
+        if len(overlap):
+            delays.append(hidden_starts[overlap[0]] - d0)
+    if len(delays) < config.TV_LAG_MIN_COUNT:
+        return 0
+    return int(np.clip(np.median(delays), 0, config.TV_LAG_MAX))
+
+
+def shift_earlier(flags, lag):
+    """flags moved `lag` frames earlier: out[t] = flags[t + lag]. The tail repeats the last value."""
+    if lag <= 0:
+        return flags.copy()
+    return np.concatenate([flags[lag:], np.repeat(flags[-1:], lag)])
+
+
+def tv_binned_evidence(hidden, covered, labels, graded, bins=None):
+    """Like tv_dead_evidence, but a not-shown frame's evidence depends on its stretch's length.
+
+    A one-second cutaway during play (a close-up while the ball rolls on) says much less than
+    a forty-second absence (a replay of a foul). Each not-shown frame is put in a bin by the length
+    of the stretch it belongs to (edges TV_LENGTH_BINS, seconds); shown frames are one more bin.
+    Each bin gets log P(bin | dead) / P(bin | alive), counted against the tracking-only model's
+    labels over the whole graded match, with one pseudo-frame per bin so an empty bin gives 0.
+    Returns (evidence, [(bin name, frames, log ratio)]).
+    """
+    bins = config.TV_LENGTH_BINS if bins is None else bins
+    edges = np.array([0] + [b * FPS for b in bins] + [np.inf])
+    category = np.full(len(hidden), -1)                      # -1 = shown
+    for h0, h1 in _true_runs(hidden):
+        category[h0:h1] = np.searchsorted(edges, h1 - h0, side="right") - 1
+    use = covered & graded & np.isin(labels, ("H", "A", "D"))
+    dead = labels == "D"
+    names = ["shown"] + ["{:g}-{:g} s".format(edges[k] / FPS, edges[k + 1] / FPS)
+                         for k in range(len(edges) - 1)]
+    cats = list(range(-1, len(edges) - 1))
+    n_dead, n_alive = (use & dead).sum(), (use & ~dead).sum()
+    evidence = np.zeros(len(hidden))
+    table = []
+    for name, cat in zip(names, cats):
+        mask = category == cat
+        p_dead = ((use & dead & mask).sum() + 1) / (n_dead + len(cats))
+        p_alive = ((use & ~dead & mask).sum() + 1) / (n_alive + len(cats))
+        ratio = float(np.log(p_dead / p_alive))
+        evidence[covered & mask] = ratio
+        table.append((name, int((covered & graded & mask).sum()), ratio))
+    return evidence, table
+
+
+# Which refinements of the TV cue to apply; pipeline.py --tv-variant picks one.
+TV_VARIANTS = {"full": (True, True), "shift": (True, False), "bins": (False, True),
+               "plain": (False, False)}
+
+
+def state_model_tv(data, events=None, halves=None, tv=None, variant="full"):
     """state_model plus the TV feed's dead-ball cue (docs/TECHNICAL.md, section 7).
 
-    Two passes: the tracking-only model labels the match, those labels calibrate the TV evidence
-    (tv_dead_evidence), and the Viterbi runs again with it added to the dead-ball score.
-    tv is the dict from broadcast.load(); without it this is exactly state_model.
+    Two passes: the tracking-only model labels the match, those labels calibrate the TV evidence,
+    and the Viterbi runs again with it added to the dead-ball score. No ground truth is read.
+    The "full" variant also moves the cue earlier by the feed's own lag (tv_lag) and weighs a
+    not-shown frame by the length of its stretch (tv_binned_evidence); "plain" is the first
+    version (tv_dead_evidence). tv is the dict from broadcast.load(); without it this is exactly
+    state_model.
     """
     halves = _default_halves(halves)
     scores = frame_scores(data, events)
     labels = decode(scores, halves)
     if tv is None:
         return labels
+    use_shift, use_bins = TV_VARIANTS[variant]
     graded = np.zeros(len(scores), dtype=bool)
     for first, last in halves:
         graded[first:last + 1] = True
-    evidence, rates = tv_dead_evidence(tv["shown"], tv["covered"], labels, graded)
-    print("  TV cue: feed away from live play on {:.1%} of model-dead and {:.1%} of model-alive "
-          "frames".format(*rates))
+    covered = tv["covered"]
+    hidden = covered & ~tv["shown"]
+    if use_shift:
+        lag = tv_lag(hidden, labels, graded)
+        print("  TV cue: the feed leaves live play {:.1f} s after a stoppage starts; cue moved "
+              "that much earlier".format(lag / FPS))
+        hidden, covered = shift_earlier(hidden, lag), shift_earlier(covered, lag)
+    if use_bins:
+        evidence, table = tv_binned_evidence(hidden, covered, labels, graded)
+        for name, frames, ratio in table:
+            print("  TV cue: {:<10} {:>7} frames  log-ratio {:+.2f}".format(name, frames, ratio))
+    else:
+        evidence, rates = tv_dead_evidence(~hidden, covered, labels, graded)
+        print("  TV cue: feed away from live play on {:.1%} of model-dead and {:.1%} of "
+              "model-alive frames".format(*rates))
     scores[:, 2] += config.TV_DEAD_WEIGHT * evidence
     return decode(scores, halves)
 

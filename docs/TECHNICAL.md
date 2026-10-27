@@ -401,3 +401,37 @@ Public window, as a sanity check (no parameter was chosen on it; `TV_DEAD_WEIGHT
 On the whole match the calibration found the feed away from live play on 62.2% of model-dead and
 12.9% of model-alive frames. The output has 188 possessions and 78,925 `D` frames. The cost is
 some alive frames now called `D` (D precision 0.62), which is the next thing to work on.
+
+### Refinement: the feed's lag and the length of a cutaway
+
+`python -m possession.diagnose_tv` looked at where the first version calls a live ball dead.
+Without labels, over the whole match:
+
+| not-shown stretch | stretches | tracking-only model calls `D` |
+|---|---|---|
+| under 3 s | 37 | 53% |
+| 3-8 s | 42 | 73% |
+| 8-20 s | 33 | 61% |
+| 20 s or more | 30 | 88% |
+| shown live | | 26% |
+
+and the feed leaves live play a median 3.3 s after a tracking-only stoppage starts. The public
+window, read as a sanity check, agrees: the feed leaves 3.0 s after a true stoppage starts and
+returns 2.0 s after the true restart, and the first version restarts play exactly when the feed
+returns. 30% of its alive-called-`D` frames sit in the 5 s after a true restart.
+
+So the feed is a *delayed* indicator: the director reacts to the whistle and to the restart a few
+seconds late. Two refinements follow, both calibrated on the match itself without labels:
+
+1. **Lag** (`methods.tv_lag`). For every tracking-only `D` spell of at least 2 s, the delay from
+   its start to the start of the overlapping not-shown stretch; the median is the feed's lag, and
+   the cue is moved that many frames earlier. Starts are used and not ends because entering `D` is
+   cheap in the Viterbi while leaving it is expensive, so the model's stoppage starts are roughly
+   on time and its restarts are late.
+2. **Length bins** (`methods.tv_binned_evidence`). One log-ratio per not-shown stretch length bin
+   (under 3 s, 3-8 s, 8-20 s, 20 s or more) and one for shown frames, each
+   `log P(bin | dead) / P(bin | alive)` against the tracking-only labels. A short cutaway during
+   play then counts for less than a long absence. The bin edges are natural breaks, not searched.
+
+`--tv-variant` runs each refinement alone (`shift`, `bins`), both (`full`, the default) or neither
+(`plain`, the first version), so their effects can be measured separately.
