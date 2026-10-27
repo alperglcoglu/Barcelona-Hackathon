@@ -44,7 +44,8 @@ possession/             our code
   submission.py         write and check the frame,label CSV
   pipeline.py           the single command that regenerates the submission
   diagnose.py           aggregate-only signal checks on the real data
-  broadcast.py          experiment: TV feed aligned to the tactical timeline (dead-ball cue)
+  broadcast.py          TV feed aligned to the tactical timeline (dead-ball cue)
+  diagnose_tv.py        aggregate-only checks of where the TV cue goes wrong
 tuning/                 parameter search and training on Metrica's public sample games
 tests/                  run without the match data: python -m pytest tests
 docs/TECHNICAL.md       the technical document submitted with the entry
