@@ -126,7 +126,7 @@ current penalties, leave-one-game-out gives 0.466, against 0.589 for the hand-wr
 The collective features do carry signal: the possessing team is more spread out, and the defending team runs faster. But the event-derived labels are coarse, and in the
 sample data "ball missing" mostly means "ball out of play", which a learned model exploits and
 which would not transfer to BAR-ATH, so we removed it as a feature. We keep the hand-written
-evidence as the submission (`--method state_model`, the default) and `--method learned` as a
+evidence as the tracking-only model (`--method state_model`) and `--method learned` as a
 documented alternative.
 
 ## 2. Assets used, and assets dropped
@@ -137,7 +137,8 @@ documented alternative.
 | Smart Tagging | **yes, weakly** | team phases as low-weight evidence |
 | homography | no | it maps pitch to pixels; useful only together with the video |
 | tactical video | no | out of scope for this version (see limitations) |
-| broadcast video, ATD and homography | no | not synchronised to tactical; mapping it back is a project of its own |
+| broadcast ATD and homography | experiment, not in the submission yet | aligned to the tactical timeline from the tracking alone (section 7) |
+| broadcast video | no | not needed: the homography `valid` flag and the alignment already say when the feed cut away |
 | public 5-minute ground truth | **checks only** | pipeline correctness and signal sanity (`possession/diagnose.py`), never tuning |
 
 The loader is checked against the organisers' baseline: `python -m possession.pipeline
@@ -280,3 +281,123 @@ python -m tuning.train
 
 The run is deterministic. No randomness, network access or state outside `data/` is involved, so
 the same data always gives the same file.
+
+## 7. The TV feed as a dead-ball signal
+
+Part of the submission since 27 October 2026: `state_model_tv` is the default method. `possession/broadcast.py` builds it; `python -m
+possession.broadcast` prints aggregate numbers only and caches the result under `data/cache/`.
+
+### Why
+
+Our weakest case is a stoppage during which the tracker still sees the ball: on the public window
+such frames are called `D` only about 10% of the time. Nothing in the tracking separates them well,
+because the players do not always stop and the ball does not always leave the pitch.
+
+The tactical video cannot help here. It is one wide camera without cuts (its homography is valid on
+every frame), so there is no "the camera cut away" event to detect in it. The broadcast is the TV
+feed. When play stops, the director goes to a close-up, the bench, the crowd or a replay; during
+live play he mostly stays on the wide game camera. So *"the TV feed was not showing this moment
+live"* is evidence for a dead ball that is independent of all our tracking features, and it does
+not need the ball to be tracked. The broadcast ball track is also a second, zoomed-in view of the
+ball, which may fill tactical ball gaps.
+
+Neither can be used before every broadcast frame is mapped to the tactical frame that shows the
+same moment. The organisers give no such mapping (DATA.md).
+
+### How the alignment works
+
+No video is decoded. Both ATD exports give positions in the same pitch coordinates, so if broadcast
+frame `b` shows live play at tactical frame `t`, the ball and the players are in the same places in
+both, up to tracking noise. Both run at 25 fps, so during live play `t = b + c` with a constant
+offset `c`. The offset only changes where the broadcast recording itself was edited (halftime, for
+example). Replays and close-ups do not shift it, because the live clock keeps running under them.
+
+1. **Anchors, a global template search.** About 400 ten-second broadcast windows with a valid
+   homography and a moving ball are each slid over the whole tactical ball track, on a 5-frame
+   grid. An offset scores the share of broadcast ball positions that fall within 3 m of the
+   tactical ball. An anchor is kept when its best score is at least 0.5 and no other peak, more
+   than 10 s away, reaches 70% of it. Its offset is then refined to the exact frame. A still ball
+   (kick-off spot, placed free kick) matches everywhere, so anchors whose ball barely moves are not
+   tried. Both orientations of the broadcast pitch are tried, in case one export is mirrored.
+2. **Voting.** Anchor offsets within 2 s of each other form a cluster; each cluster with at least
+   3 votes is one piece of the piecewise-constant mapping.
+3. **Dense matching.** The whole broadcast is cut into 1-second windows. A window scores, at a
+   given offset, the share of broadcast points (home players, away players, ball) that have a
+   tactical point of the same class within 3 m. The broadcast camera is zoomed in, so it sees only
+   some players; checking broadcast-to-tactical and not the reverse makes that harmless.
+   - Pass 1 tries each cluster offset ±1 s (clock drift) and keeps only near-perfect windows
+     (score ≥ 0.9). They fix the local offset, as a median over sure windows within 5 minutes.
+   - Pass 2 scores every window only within ±2 frames of that local offset and accepts it at a
+     score of 0.6 or more.
+   - When neighbouring offsets tie on the number of hits (players move slowly), the offset whose
+     points sit closest wins.
+   - Matched stretches shorter than 3 s are dropped, and holes under 1 s in the tactical `shown`
+     mask (a frame skipped where the offset moves by one) are closed.
+
+   The two passes exist because a window that matches nothing (a replay of earlier play) can find
+   a lucky offset by chance when it is allowed a hundred tries; with five per cluster it cannot.
+   The same reasoning is behind the 3-second minimum: a live shot lasts many seconds.
+
+The output per tactical frame is `shown` (the feed was showing that moment live) and `bc_ball` (the
+broadcast's ball position at that moment). The synthetic tests in `tests/test_broadcast.py` build a
+broadcast from known pieces (two halves at different offsets, a close-up, a replay, a mirrored
+export) and check that the mapping is recovered and that the close-up and the replay stay unmatched.
+
+On a full-size synthetic match (199,319 tactical and 164,488 broadcast frames) the alignment runs
+in about 40 s, finds both offsets exactly, and leaves only the close-up and the replay unmatched.
+
+### What decides whether it goes in
+
+The summary prints, with no labels: the offsets found, how much of the broadcast matched, how much
+of the graded tactical time was shown live, how far apart the two ball tracks are when both see the
+ball, and how much of the tactical ball gap the broadcast fills. It also prints how often the
+frozen model already calls `D` on shown and not-shown frames. On the public window it prints, as a
+sanity check only, the share of dead and alive frames that were shown live.
+
+The signal is worth adding only if not-shown frames are far more often dead than shown ones. Its
+weight cannot be tuned on the sample games, which have no broadcast, so it would be set from these
+unlabeled rates, in the same way as the Smart Tagging weight (section 1.2).
+
+### First run on BAR-ATH (aggregates only)
+
+- Two offsets were found, +4,011 and +26,920 frames, one per half, with 78 and 66 anchor votes;
+  the other orientation got 8. The dense windows match with a median score of 0.94 and drift by at
+  most a few frames.
+- 90.8% of valid-homography broadcast frames match a live moment, against 4.0% of invalid ones.
+- 62.5% of graded tactical time is shown live. The not-shown stretches number 145, with a median
+  of 7 s and a p90 of 39 s: the length of stoppages, not of quick camera changes.
+- Without labels: the frozen model calls `D` on 26.3% of shown frames and 78.3% of not-shown ones.
+- Public window, sanity only: shown on 90.2% of alive frames and 29.5% of dead ones. The dead
+  frames on which the tracker still sees the ball, which the model calls `D` only 10% of the time,
+  are not shown on 71.4%.
+- The broadcast ball covers only 9% of the tactical ball gaps, so gap filling is left aside.
+
+### How it enters the model (`methods.state_model_tv`)
+
+As one more term in the dead-ball score of the Viterbi, a per-frame log-likelihood ratio:
+
+    not shown:  log( P(hidden | dead) / P(hidden | alive) )
+    shown:      log( P(shown | dead)  / P(shown | alive)  )
+
+and 0 where the broadcast recording does not exist (before it starts, halftime, after it ends).
+
+The two rates are estimated on the whole graded match **against the tracking-only model's own
+labels**, so no ground truth is read and nothing is tuned on the public window. The model runs
+twice: once without the cue, to calibrate it, and once with it. With the run above the rates are
+about 0.64 and 0.15, which gives +1.45 per not-shown frame and -0.86 per shown frame. That is the
+same order as the long-ball-gap evidence (1.88 per frame) the tuning chose. The model's labels are
+noisy, which pulls the two rates towards each other, so this ratio is if anything an underestimate.
+`TV_DEAD_WEIGHT` (1.0) scales it; it cannot be tuned because the sample games have no broadcast.
+
+### Result
+
+Public window, as a sanity check (no parameter was chosen on it; `TV_DEAD_WEIGHT` stayed at 1.0):
+
+| | spellF1 | macroF1 | D recall | possessions (truth 17) |
+|---|---|---|---|---|
+| `state_model` (previous submission) | 0.325 | 0.658 | 40% | 15 |
+| `state_model_tv` | 0.413 | 0.741 | 86% | 13 |
+
+On the whole match the calibration found the feed away from live play on 62.2% of model-dead and
+12.9% of model-alive frames. The output has 188 possessions and 78,925 `D` frames. The cost is
+some alive frames now called `D` (D precision 0.62), which is the next thing to work on.
