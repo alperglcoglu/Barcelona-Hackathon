@@ -640,3 +640,24 @@ same number of spurious changes (1538 against 1532).
 `python -m possession.pipeline --set NAME=VALUE` overrides a config value for an ablation run, so
 both additions can be checked on BAR-ATH separately (`--set TRANSITION_CUE_TO=0`,
 `--set MIN_SPELL=0`).
+
+### Result on BAR-ATH: neither is adopted
+
+Alper's local run on the public window (sanity check, never tuned on), against the frozen file
+(spellF1 0.519 / macroF1 0.835, 10 possessions):
+
+| | spellF1 | macroF1 | possessions |
+|---|---|---|---|
+| frozen (PR #14) | 0.519 | 0.835 | 10 |
+| + transition cue | 0.504 | 0.829 | 10 |
+| + soft minimum duration, cost 5.5, relief 0.5 | 0.483 | 0.829 | 12 |
+| both | 0.469 | 0.823 | 12 |
+
+Both lose, so both are switched off in `config.py` (`TRANSITION_CUE_TO = 0`, `MIN_SPELL = 0`) and
+the submission stays the frozen one. The code stays, for ablations with `--set`.
+
+The differences are inside the window's noise (17 possessions, one more or less matched moves
+spellF1 by about 0.03), and the duration model won on all 13 tuning games. But the rule is that a
+change must beat the frozen file where it is checked, and choosing the other way would be tuning on
+judgement. The duration variant did add two possessions (12 against 10), the direction BAR-ATH
+needs, but they did not match: more possessions alone are not the goal.
