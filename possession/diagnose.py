@@ -147,6 +147,13 @@ def main():
         mean_speed = np.where(seen, speeds, 0).sum(1) / seen.sum(1)
     team = features.team_evidence(ball, data["players"], data["team"])
     dead = features.dead_evidence(ball, data["players"], data["pitch"])
+    # Candidate signal for stoppages in which the tracker keeps the ball: a ball that stays nearly
+    # still for seconds (placed for a free kick, held for a throw-in). Printed, not used yet.
+    slow_ball = features.nan_moving_mean(features.ball_speed(data["ball"]), 25)
+    length, width = float(data["pitch"][0]), float(data["pitch"][1])
+    with np.errstate(invalid="ignore"):
+        inside = ((data["ball"][:, 0] >= 0) & (data["ball"][:, 0] <= length)
+                  & (data["ball"][:, 1] >= 0) & (data["ball"][:, 1] <= width))
 
     print("== public window: {} frames, signal sanity (not for tuning) ==".format(window.sum()))
     for name, mask in (("alive", window & alive), ("dead", window & (gt == "D"))):
@@ -155,6 +162,12 @@ def main():
         print("  ball missing (after fill) {:.1%}".format(np.isnan(ball[mask, 0]).mean()))
         print("  mean player speed         " + quantiles(mean_speed[mask]))
         print("  dead evidence             " + quantiles(dead[mask]))
+        visible = mask & ~np.isnan(data["ball"][:, 0])
+        print("  ball speed, 2 s mean      " + quantiles(slow_ball[visible]))
+        print("  ball near-still (<1 m/s over 2 s) on {:.1%} of visible frames".format(
+            np.mean(slow_ball[visible] < 1.0) if visible.any() else 0.0))
+        print("  ball inside the pitch     {:.1%} of visible frames".format(
+            np.mean(inside[visible]) if visible.any() else 0.0))
 
     # Shape of the tracking noise over the whole graded match. These calibrate the simulated
     # degradation in tuning/sample_data.degrade, which is how the parameters are made to transfer.
