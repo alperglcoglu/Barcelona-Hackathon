@@ -1,0 +1,16 @@
+# Exact versions that produced the submitted CSV (Windows, recorded with `pip freeze`).
+# Only the packages the pipeline and tests use are listed; unrelated tools in that
+# environment were left out. Install with: pip install -r requirements-lock.txt
+numpy==2.0.2
+pandas==2.2.3
+python-dateutil==3.0.0
+pytz==2026.5
+tzdata==2026.5
+six==1.17.0
+
+# Tests
+pytest==8.3.3
+iniconfig==2.3.1
+packaging==26.2
+pluggy==1.7.0
+colorama==0.4.6
