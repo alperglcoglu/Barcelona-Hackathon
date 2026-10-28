@@ -50,3 +50,11 @@ def test_sample_frames_is_deterministic_and_inside_the_mask():
     assert np.array_equal(a, b) and len(a) == 300 and mask[a].all()
     assert (np.diff(a) > 0).all()
     assert len(probe.sample_frames(mask, 10 ** 6)) == mask.sum()
+
+
+def test_pick_device_prefers_the_gpu_only_when_asked_for_auto():
+    from possession import probe_video_ball as probe
+    assert probe.pick_device("auto", True) == "0"
+    assert probe.pick_device("auto", False) == "cpu"
+    assert probe.pick_device("cpu", True) == "cpu"
+    assert probe.pick_device("1", True) == "1"

@@ -59,6 +59,7 @@ DECIDE_ERROR = 2.0                 # metres: calibration median error must be be
 DECIDE_FILL = 0.30                 # share of live gap frames that must get an on-pitch ball
 ON_PITCH_MARGIN = 2.0              # metres beyond the lines still counted as on the pitch
 SEEK_AHEAD = 50                    # frames: closer than this, read forward instead of seeking
+PROGRESS = 100                     # frames between progress lines
 QUANTILES = (10, 25, 50, 75, 90)
 
 
@@ -160,22 +161,63 @@ def read_frames(path, frames):
         capture.release()
 
 
-def detect(weights, path, frames, imgsz, conf):
-    """{frame: (centre_x, centre_y, confidence)} for frames with a ball box, and frames/s."""
+def pick_device(requested, cuda_available):
+    """"0" (the first GPU) or "cpu" for --device auto; anything else is passed through."""
+    if requested != "auto":
+        return requested
+    return "0" if cuda_available else "cpu"
+
+
+def report_device(requested):
+    """Choose the device and say which one runs, so a CPU-only torch install is noticed at once."""
+    import torch
+    cuda = torch.cuda.is_available()
+    device = pick_device(requested, cuda)
+    gpu = torch.cuda.get_device_name(0) if cuda else "none"
+    print("  torch {}, CUDA available: {}, GPU: {}, running on: {}".format(
+        torch.__version__, cuda, gpu, device))
+    if device == "cpu":
+        print("  WARNING: running on the CPU, which is slow. With an NVIDIA GPU, install the CUDA "
+              "build of torch:\n    pip uninstall -y torch torchvision\n    pip install torch "
+              "torchvision --index-url https://download.pytorch.org/whl/cu124")
+    return device
+
+
+def detect(weights, path, frames, imgsz, conf, device="auto"):
+    """{frame: (centre_x, centre_y, confidence)} for frames with a ball box, and frames/s.
+
+    Prints a progress line every PROGRESS frames (counts only) and, at the end, how the time splits
+    between reading the video and running the model.
+    """
     from ultralytics import YOLO
+    device = report_device(device)
     model = YOLO(weights)
     ball_ids = [i for i, name in model.names.items() if "ball" in str(name).lower()]
     if not ball_ids:
         raise SystemExit("the model has no class named like 'ball': {}".format(model.names))
     print("  ball classes: {}".format([model.names[i] for i in ball_ids]))
     found, start = {}, time.time()
+    reading = predicting = 0.0
+    total, done = len(frames), 0
+    tick = time.time()
     for frame, image in read_frames(path, frames):
-        boxes = model.predict(image, imgsz=imgsz, conf=conf, verbose=False)[0].boxes
+        now = time.time()
+        reading += now - tick
+        boxes = model.predict(image, imgsz=imgsz, conf=conf, device=device,
+                              half=device != "cpu", verbose=False)[0].boxes
         hit = pick_ball(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy(),
                         boxes.cls.cpu().numpy(), ball_ids)
         if hit is not None:
             found[frame] = hit
-    return found, len(frames) / max(time.time() - start, 1e-9)
+        tick = time.time()
+        predicting += tick - now
+        done += 1
+        if done % PROGRESS == 0 or done == total:
+            rate = done / max(tick - start, 1e-9)
+            print("  {}/{} frames, {:.1f} frames/s, about {:.1f} min left".format(
+                done, total, rate, (total - done) / rate / 60), flush=True)
+    print("  time: reading the video {:.0f} s, running the model {:.0f} s".format(reading, predicting))
+    return found, total / max(time.time() - start, 1e-9)
 
 
 def part_a(missing, graded, live, bins, source):
@@ -205,7 +247,8 @@ def part_b(args, data, missing, graded, live, bins, labels):
     frames = np.union1d(calibration, gap)
     print("\n== video ball detector on {} frames ({} calibration, {} live gap) ==".format(
         len(frames), len(calibration), len(gap)))
-    found, speed = detect(args.weights, video_path(GAME), frames, args.imgsz, min(CONF_LEVELS))
+    found, speed = detect(args.weights, video_path(GAME), frames, args.imgsz, min(CONF_LEVELS),
+                          args.device)
 
     def metres(subset):
         xy = np.full((len(subset), 2), np.nan)
@@ -270,6 +313,8 @@ def main(argv=None):
     parser.add_argument("--n", type=int, default=2000, help="frames per sample (default 2000)")
     parser.add_argument("--imgsz", type=int, default=1280, help="YOLO input size (default 1280)")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", default="auto", help="auto (GPU if torch sees one), cpu, "
+                        "or a CUDA index such as 0")
     args = parser.parse_args(argv)
 
     data = io_atd.load(GAME)
