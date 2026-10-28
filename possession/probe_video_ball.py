@@ -26,9 +26,12 @@ on a sample of frames:
     Then prints a go / stop line for building the detector into the model.
 
 Weights. Any YOLO model with a class whose name contains "ball" works, for example:
-  - best.pt from github.com/abdullahtarek/football_analysis (trained on Roboflow's open
-    football-players-detection dataset; classes ball, goalkeeper, player, referee);
-  - the ball detection model of github.com/roboflow/sports;
+  - football-ball-detection.pt, the ball-only model of github.com/roboflow/sports
+    (pip install gdown; gdown -O football-ball-detection.pt
+    "https://drive.google.com/uc?id=1isw4wx-MK9h9LMr36VvIWlJD6ppUvw7V", the link in its
+    examples/soccer/setup.sh);
+  - the "Trained Yolo v5" best.pt of github.com/abdullahtarek/football_analysis (the Google Drive
+    link under "Trained Models" in its README; classes ball, goalkeeper, player, referee);
   - a generic COCO model such as yolov8x.pt (class "sports ball"), weakest on a small ball.
 All three are public, so the method stays one the organisers can access (RULES.md).
 """
