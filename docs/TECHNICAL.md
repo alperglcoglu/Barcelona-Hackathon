@@ -712,4 +712,26 @@ The probe changes nothing in the submission: the pipeline does not read it.
 
 ### Result
 
-Pending: Alper runs the probe locally and only its summary numbers are recorded here.
+First run on BAR-ATH (Alper's machine, 500 calibration and 500 live gap frames, confidence 0.25,
+the most confident box per frame):
+
+| | roboflow/sports ball model | abdullahtarek best.pt |
+|---|---|---|
+| calibration: ball detected | 86% | 71% |
+| calibration: error p25 / p50 / p75 (m) | 0.7 / 2.6 / 23.6 | 1.1 / 10.9 / 35.8 |
+| live gaps: ball found on the pitch | 49% | 37% |
+| nearest player to that ball within 2 m | 85% | 44% |
+| that player's team agrees with the labels | 77% | 54% |
+
+Both were STOP under the fixed thresholds. The roboflow model is clearly better, so the other one
+is dropped. Its error is bimodal: about half of the detections are within 1 m of the tracked ball
+and most of the rest are 20-45 m away, another ball-like object (a spare ball by the touchline, a
+pitch marking). Taking the most confident box anywhere in the frame lets those win. The probe now
+keeps up to five candidates per frame and compares three selection rules, all label-free: the most
+confident box, the most confident box on the pitch, and the most confident box on the pitch with a
+player within 2 m.
+
+Part A also showed that, by the frozen model's labels, only 1.4% of graded frames are live with the
+ball missing. That figure is partly circular, because the model reads a long gap as a stoppage. The
+probe therefore also gives the live share by the players' pace, and looks for an on-pitch ball at a
+player's feet on gap frames the model calls dead.

@@ -58,3 +58,26 @@ def test_pick_device_prefers_the_gpu_only_when_asked_for_auto():
     assert probe.pick_device("auto", False) == "cpu"
     assert probe.pick_device("cpu", True) == "cpu"
     assert probe.pick_device("1", True) == "1"
+
+
+def test_ball_candidates_keeps_the_most_confident_ball_boxes():
+    from possession import probe_video_ball as probe
+    xyxy = [[0, 0, 2, 2], [10, 10, 12, 12], [20, 20, 22, 22], [30, 30, 32, 32]]
+    conf = [0.3, 0.9, 0.5, 0.95]
+    cls = [0, 0, 0, 1]                                     # the last box is not a ball
+    c = probe.ball_candidates(xyxy, conf, cls, ball_ids=[0], k=2)
+    assert c.shape == (2, 3)
+    assert np.allclose(c[:, 2], [0.9, 0.5]) and np.allclose(c[0, :2], [11, 11])
+    assert probe.ball_candidates(xyxy, conf, cls, ball_ids=[7]).shape == (0, 3)
+
+
+def test_select_ball_rules():
+    from possession import probe_video_ball as probe
+    conf = np.array([0.9, 0.6, 0.4, 0.2])                  # sorted, as ball_candidates returns them
+    inside = np.array([False, True, True, True])
+    near = np.array([False, False, True, True])
+    assert probe.select_ball(conf, inside, near, "top") == 0
+    assert probe.select_ball(conf, inside, near, "on-pitch") == 1
+    assert probe.select_ball(conf, inside, near, "near-player") == 2
+    assert probe.select_ball(conf, inside, near, "near-player", min_conf=0.5) == -1
+    assert probe.select_ball(conf[:0], inside[:0], near[:0], "top") == -1

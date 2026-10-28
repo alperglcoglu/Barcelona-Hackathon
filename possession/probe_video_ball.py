@@ -60,6 +60,9 @@ DECIDE_FILL = 0.30                 # share of live gap frames that must get an o
 ON_PITCH_MARGIN = 2.0              # metres beyond the lines still counted as on the pitch
 SEEK_AHEAD = 50                    # frames: closer than this, read forward instead of seeking
 PROGRESS = 100                     # frames between progress lines
+MAX_CANDIDATES = 5                 # ball boxes kept per frame
+NEAR_PLAYER = 2.0                  # metres: a ball this close to a player is at someone's feet
+RULES = ("top", "on-pitch", "near-player")
 QUANTILES = (10, 25, 50, 75, 90)
 
 
@@ -115,15 +118,39 @@ def pixels_to_metres(matrix, pixel_x, pixel_y, pitch):
     return x * float(pitch[0]), y * float(pitch[1])
 
 
+def ball_candidates(xyxy, conf, cls, ball_ids, k=MAX_CANDIDATES):
+    """(m, 3) array of [centre_x, centre_y, confidence] for up to k ball boxes, most confident first."""
+    xyxy, conf, cls = np.asarray(xyxy, float).reshape(-1, 4), np.asarray(conf, float), np.asarray(cls)
+    keep = np.flatnonzero(np.isin(cls, list(ball_ids)))
+    keep = keep[np.argsort(-conf[keep], kind="stable")][:k]
+    return np.column_stack([(xyxy[keep, 0] + xyxy[keep, 2]) / 2.0,
+                            (xyxy[keep, 1] + xyxy[keep, 3]) / 2.0, conf[keep]])
+
+
 def pick_ball(xyxy, conf, cls, ball_ids):
     """(centre_x, centre_y, confidence) of the most confident ball box, or None if there is none."""
-    xyxy, conf, cls = np.asarray(xyxy, float).reshape(-1, 4), np.asarray(conf, float), np.asarray(cls)
-    keep = np.isin(cls, list(ball_ids))
-    if not keep.any():
-        return None
-    best = np.flatnonzero(keep)[np.argmax(conf[keep])]
-    x0, y0, x1, y1 = xyxy[best]
-    return (x0 + x1) / 2.0, (y0 + y1) / 2.0, float(conf[best])
+    candidates = ball_candidates(xyxy, conf, cls, ball_ids, k=1)
+    return tuple(candidates[0]) if len(candidates) else None
+
+
+def select_ball(conf, inside, near, rule, min_conf=0.0):
+    """Index of the candidate a rule picks, or -1. Candidates are sorted by confidence.
+
+      top          the most confident box, wherever it is
+      on-pitch     the most confident box on the pitch
+      near-player  the most confident box on the pitch with a player within NEAR_PLAYER metres
+    """
+    ok = np.asarray(conf) >= min_conf
+    if rule == "on-pitch":
+        ok &= np.asarray(inside, dtype=bool)
+    elif rule == "near-player":
+        ok &= np.asarray(inside, dtype=bool) & np.asarray(near, dtype=bool)
+    elif rule != "top":
+        raise ValueError(rule)
+    hits = np.flatnonzero(ok)
+    if rule == "top":
+        return 0 if len(ok) and ok[0] else -1
+    return int(hits[0]) if len(hits) else -1
 
 
 def sample_frames(mask, n, seed=0):
@@ -184,7 +211,7 @@ def report_device(requested):
 
 
 def detect(weights, path, frames, imgsz, conf, device="auto"):
-    """{frame: (centre_x, centre_y, confidence)} for frames with a ball box, and frames/s.
+    """{frame: ball_candidates array} for every frame read, and frames/s.
 
     Prints a progress line every PROGRESS frames (counts only) and, at the end, how the time splits
     between reading the video and running the model.
@@ -203,12 +230,9 @@ def detect(weights, path, frames, imgsz, conf, device="auto"):
     for frame, image in read_frames(path, frames):
         now = time.time()
         reading += now - tick
-        boxes = model.predict(image, imgsz=imgsz, conf=conf, device=device,
-                              half=device != "cpu", verbose=False)[0].boxes
-        hit = pick_ball(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy(),
-                        boxes.cls.cpu().numpy(), ball_ids)
-        if hit is not None:
-            found[frame] = hit
+        boxes = model.predict(image, imgsz=imgsz, conf=conf, device=device, verbose=False)[0].boxes
+        found[frame] = ball_candidates(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy(),
+                                       boxes.cls.cpu().numpy(), ball_ids)
         tick = time.time()
         predicting += tick - now
         done += 1
@@ -220,89 +244,128 @@ def detect(weights, path, frames, imgsz, conf, device="auto"):
     return found, total / max(time.time() - start, 1e-9)
 
 
-def part_a(missing, graded, live, bins, source):
+def part_a(missing, graded, live_labels, live_pace, bins):
     print("\n== ball gaps on graded frames ({} frames) ==".format(int(graded.sum())))
     g = graded
     gaps = [(a, b) for a, b in gap_runs(missing & g)]
     print("  missing: {} frames ({:.1%}) in {} gaps".format(
-        int((missing & g).sum()), (missing & g).mean() / max(g.mean(), 1e-9), len(gaps)))
+        int((missing & g).sum()), (missing & g).sum() / max(g.sum(), 1), len(gaps)))
     print("  gap length (s)       " + q([(b - a) / FPS for a, b in gaps], "{:.1f}"))
-    print("\n  {:<9} {:>9} {:>11} {:>12}   (live by {})".format(
-        "gap", "frames", "of missing", "live share", source))
+    print("\n  share of missing frames in live play, by the labels and by the players' pace")
+    print("  (the labels are partly circular: the model reads a long gap as a stoppage)")
+    print("  {:<9} {:>9} {:>11} {:>12} {:>12}".format(
+        "gap", "frames", "of missing", "by labels", "by pace"))
     for k, name in enumerate(GAP_BIN_NAMES):
         sel = missing & g & (bins == k)
-        print("  {:<9} {:>9} {:>11} {:>12}".format(
+        print("  {:<9} {:>9} {:>11} {:>12} {:>12}".format(
             name, int(sel.sum()), "{:.1%}".format(sel.sum() / max((missing & g).sum(), 1)),
-            share(live[sel])))
-    upper = missing & g & live
-    print("  live missing frames: {} ({:.1%} of graded): the most a video detector could inform".format(
-        int(upper.sum()), upper.sum() / max(g.sum(), 1)))
+            share(live_labels[sel]) if live_labels is not None else "n/a", share(live_pace[sel])))
+    sel = missing & g
+    print("  {:<9} {:>9} {:>11} {:>12} {:>12}".format(
+        "all", int(sel.sum()), "100.0%",
+        share(live_labels[sel]) if live_labels is not None else "n/a", share(live_pace[sel])))
 
 
-def part_b(args, data, missing, graded, live, bins, labels):
+def frame_candidates(candidates, matrix, frame_players, pitch):
+    """Candidates of one frame on the pitch: (xy metres, conf, inside, nearest player distance)."""
+    if candidates is None or len(candidates) == 0:
+        empty = np.zeros(0)
+        return np.zeros((0, 2)), empty, empty.astype(bool), empty
+    x, y = pixels_to_metres(matrix, candidates[:, 0], candidates[:, 1], pitch)
+    xy = np.column_stack([x, y])
+    seen = ~np.isnan(frame_players[:, 0])
+    if seen.any():
+        d = np.hypot(xy[:, None, 0] - frame_players[None, seen, 0],
+                     xy[:, None, 1] - frame_players[None, seen, 1])
+        nearest = d.min(axis=1)
+    else:
+        nearest = np.full(len(xy), np.inf)
+    return xy, candidates[:, 2], on_pitch(x, y, pitch), nearest
+
+
+def choose(found, frames, matrices, players, pitch, rule, min_conf):
+    """(xy, nearest player distance, all candidates' xy) per frame; NaN where the rule picks none."""
+    xy = np.full((len(frames), 2), np.nan)
+    nearest = np.full(len(frames), np.nan)
+    every = []
+    for i, frame in enumerate(frames):
+        cxy, conf, inside, near = frame_candidates(found.get(frame), matrices[frame],
+                                                   players[frame], pitch)
+        every.append(cxy)
+        j = select_ball(conf, inside, near <= NEAR_PLAYER, rule, min_conf)
+        if j >= 0:
+            xy[i], nearest[i] = cxy[j], near[j]
+    return xy, nearest, every
+
+
+def part_b(args, data, missing, graded, live, dead, running, bins, labels):
     ball, players, team, pitch = data["ball"], data["players"], data["team"], data["pitch"]
     matrices, _, valid = load_homography(GAME)
     calibration = sample_frames(~missing & graded & valid, args.n, args.seed)
     gap = sample_frames(missing & graded & live & valid, args.n, args.seed + 1)
-    frames = np.union1d(calibration, gap)
-    print("\n== video ball detector on {} frames ({} calibration, {} live gap) ==".format(
-        len(frames), len(calibration), len(gap)))
+    dead_gap = sample_frames(missing & graded & dead & valid, args.n, args.seed + 2)
+    frames = np.union1d(np.union1d(calibration, gap), dead_gap)
+    print("\n== video ball detector on {} frames ({} calibration, {} live gap, {} dead gap) ==".format(
+        len(frames), len(calibration), len(gap), len(dead_gap)))
     found, speed = detect(args.weights, video_path(GAME), frames, args.imgsz, min(CONF_LEVELS),
                           args.device)
 
-    def metres(subset):
-        xy = np.full((len(subset), 2), np.nan)
-        score = np.zeros(len(subset))
-        for i, frame in enumerate(subset):
-            if frame in found:
-                px, py, score[i] = found[frame]
-                xy[i] = pixels_to_metres(matrices[frame], px, py, pitch)
-        return xy, score
-
-    cal_xy, cal_score = metres(calibration)
-    error = np.hypot(*(cal_xy - ball[calibration]).T)
-    print("\n  calibration (tracking has the ball):")
-    for level in CONF_LEVELS:
-        hit = cal_score >= level
+    print("\n  calibration (tracking has the ball), conf >= {:.2f}:".format(DECIDE_CONF))
+    results = {}
+    for rule in RULES:
+        cal_xy, _, every = choose(found, calibration, matrices, players, pitch, rule, DECIDE_CONF)
+        error = np.hypot(*(cal_xy - ball[calibration]).T)
+        hit = ~np.isnan(error)
         e = error[hit]
-        print("    conf >= {:.2f}: detected {}   error (m) {}   within 1/2/5 m {}/{}/{}".format(
-            level, share(hit), q(e), share(e < 1), share(e < 2), share(e < 5)))
+        print("    {:<12} detected {:>6}   error (m) {}   within 1/2/5 m {}/{}/{}".format(
+            rule, share(hit), q(e), share(e < 1), share(e < 2), share(e < 5)))
+        results[rule] = [float(np.median(e)) if len(e) else float("inf")]
+    best = [len(c) > 0 and np.hypot(*(c - ball[f]).T).min() < 2.0
+            for c, f in zip(every, calibration)]
+    print("    any of the up to {} candidates within 2 m of the tracked ball: {}".format(
+        MAX_CANDIDATES, share(best)))
 
-    gap_xy, gap_score = metres(gap)
-    inside = on_pitch(gap_xy[:, 0], gap_xy[:, 1], pitch)
-    print("\n  live gap frames (tracking lost the ball):")
-    for level in CONF_LEVELS:
-        hit = gap_score >= level
-        print("    conf >= {:.2f}: detected {}   on the pitch {}".format(
-            level, share(hit), share(hit & inside)))
-    use = (gap_score >= DECIDE_CONF) & inside
-    print("    on-pitch at conf >= {:.2f}, by gap length:".format(DECIDE_CONF))
-    for k, name in enumerate(GAP_BIN_NAMES):
-        sel = bins[gap] == k
-        print("      {:<9} n {:>5}   {}".format(name, int(sel.sum()), share(use[sel])))
+    print("\n  live gap frames (tracking lost the ball), conf >= {:.2f}:".format(DECIDE_CONF))
+    for rule in RULES[1:]:
+        gap_xy, nearest, _ = choose(found, gap, matrices, players, pitch, rule, DECIDE_CONF)
+        use = ~np.isnan(gap_xy[:, 0])
+        by_bin = "  ".join("{} {}".format(name, share(use[bins[gap] == k]))
+                           for k, name in enumerate(GAP_BIN_NAMES) if (bins[gap] == k).any())
+        print("    {:<12} found {:>6}   by gap length: {}".format(rule, share(use), by_bin))
+        results[rule].append(float(use.mean()) if len(use) else 0.0)
+        if use.any():
+            d_home, d_away = features.team_distances(gap_xy[use], players[gap[use]], team)
+            close = np.fmin(d_home, d_away) < NEAR_PLAYER
+            line = "      nearest player (m) {}   within {:.0f} m {}".format(
+                q(nearest[use]), NEAR_PLAYER, share(close))
+            if labels is not None:
+                near_team = np.where(d_home <= d_away, "H", "A")
+                line += "   team agrees with labels {}".format(
+                    share(near_team[close] == labels[gap[use]][close]))
+            print(line)
+    results["top"].append(results["on-pitch"][1])
 
-    if use.any():
-        d_home, d_away = features.team_distances(gap_xy[use], players[gap[use]], team)
-        nearest = np.fmin(d_home, d_away)
-        print("    nearest player to the detected ball (m): " + q(nearest))
-        if labels is not None:
-            near_team = np.where(d_home <= d_away, "H", "A")
-            close = nearest < 2.0
-            agree = near_team[close] == labels[gap[use]][close]
-            print("    nearest player within 2 m: {}; their team agrees with the labels: {}".format(
-                share(close), share(agree)))
+    print("\n  dead gap frames (tracking lost the ball, labelled dead), conf >= {:.2f}:".format(
+        DECIDE_CONF))
+    for rule in RULES[1:]:
+        dead_xy, _, _ = choose(found, dead_gap, matrices, players, pitch, rule, DECIDE_CONF)
+        use = ~np.isnan(dead_xy[:, 0])
+        print("    {:<12} found {:>6}   of which the players are running {}   "
+              "(running on all sampled dead gap frames {})".format(
+                  rule, share(use), share(running[dead_gap][use]), share(running[dead_gap])))
 
-    remaining = int((missing & graded & live).sum())
-    print("\n  speed: {:.1f} frames/s -> all {} live gap frames in about {:.0f} min".format(
-        speed, remaining, remaining / max(speed, 1e-9) / 60))
+    todo = int((missing & graded).sum())
+    print("\n  speed: {:.1f} frames/s -> all {} missing graded frames in about {:.0f} min".format(
+        speed, todo, todo / max(speed, 1e-9) / 60))
 
-    hit = cal_score >= DECIDE_CONF
-    median_error = float(np.nanmedian(error[hit])) if hit.any() else float("inf")
-    fill = float(use.mean()) if len(use) else 0.0
-    go = median_error < DECIDE_ERROR and fill >= DECIDE_FILL
-    print("\n  DECISION: calibration median error {:.2f} m (need < {:.0f}), live gaps filled {:.1%} "
-          "(need >= {:.0%}) -> {}".format(median_error, DECIDE_ERROR, fill, DECIDE_FILL,
-                                          "GO: build the detector in" if go else "STOP"))
+    print()
+    for rule in RULES:
+        median_error, fill = results[rule]
+        go = median_error < DECIDE_ERROR and fill >= DECIDE_FILL
+        print("  DECISION {:<12} calibration median error {:.2f} m (need < {:.0f}), live gaps "
+              "filled {:.1%} (need >= {:.0%}) -> {}".format(
+                  rule, median_error, DECIDE_ERROR, fill, DECIDE_FILL,
+                  "GO: build the detector in" if go else "STOP"))
 
 
 def main(argv=None):
@@ -326,20 +389,21 @@ def main(argv=None):
     missing = np.isnan(ball[:, 0])
     bins = gap_length_bins(missing)
 
-    labels = None
+    with np.errstate(invalid="ignore"):
+        running = pace_ratio(data["players"]) > config.DEAD_SPEED_RATIO
+    labels = live_labels = None
     if args.labels:
         labels = submission.read(args.labels)
         if len(labels) != n:
             raise SystemExit("{}: {} rows, expected {}".format(args.labels, len(labels), n))
-        live, source = np.isin(labels, ("H", "A")), "labels"
+        live_labels = np.isin(labels, ("H", "A"))
+        live, dead = live_labels, labels == "D"
     else:
-        with np.errstate(invalid="ignore"):
-            live, source = pace_ratio(data["players"]) > config.DEAD_SPEED_RATIO, "players' pace"
+        live, dead = running, ~running
 
-    part_a(missing, graded, live, bins, source)
+    part_a(missing, graded, live_labels, running, bins)
     if args.weights:
-        part_b(args, data, missing, graded, live, bins, labels)
-
+        part_b(args, data, missing, graded, live, dead, running, bins, labels)
 
 if __name__ == "__main__":
     main()
