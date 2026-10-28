@@ -793,6 +793,36 @@ against the frozen file (spellF1 0.519), following the freeze rule:
 | vb_team | `VIDEO_BALL=1 VIDEO_BALL_BREAKS_GAPS=0` (team evidence only) |
 | vb_half | `VIDEO_BALL=1 VIDEO_BALL_WEIGHT=0.5` |
 
-### Result
+### Result: adopted
 
-Pending.
+Detections ran once on all 64,641 graded frames without a tracked ball; 27,283 of them were filled
+after the selection and the jump check. Public window (sanity check, never tuned on), against the
+frozen file:
+
+| | spellF1 | macroF1 | possessions (true 17) | transF1 | full match: D share | full match: possessions |
+|---|---|---|---|---|---|---|
+| frozen (section 10) | 0.519 | 0.835 | 10 | 0.364 | 49.0% | 182 |
+| **vb** | **0.533** | 0.824 | 10 | 0.235 | 39.2% | 203 |
+| vb_team | 0.519 | 0.835 | 10 | 0.364 | 49.0% | 182 |
+| vb_half | 0.500 | 0.821 | 11 | 0.286 | 39.2% | 201 |
+
+`vb` beats the frozen file on spellF1, so by the freeze rule it becomes the submission
+(`VIDEO_BALL = 1`, file sha256 `3b610b63...`). What the numbers do and do not say:
+
+- The gain is small and inside the window's noise. It comes from one more possession matched at
+  IoU 0.7 (spellF1 at 0.7: 0.296 → 0.370), not from more matched possessions (8 of 17 in both).
+- On the full match it moves in the expected direction. The `D` share falls from 49% to 39%,
+  near the usual share of dead time in a match, and the number of possessions rises (BAR-ATH had
+  too few: 10 predicted against 17 true in the window). That fits the probe: by the players' pace,
+  most ball gaps are live play the old model called dead.
+- It has costs. In the window, true `D` frames called `A` rise from 77 to 181 (`D` recall
+  0.879 → 0.808), and transition timing gets worse (transF1 at ±25 frames 0.364 → 0.235). The
+  likely cause is a ball the video sees on the pitch during a set piece: the filled frames end the
+  ball gap, and with it the long-gap dead-ball evidence. macroF1, the tie-break, falls by 0.011.
+- `vb_team` changes nothing in the window. The effect comes from breaking long gaps, not from the
+  team evidence on the filled frames.
+- Three variants were scored and the best one taken. They were fixed in advance and are all
+  reported here, but picking the best of three on 17 possessions is a mild selection effect.
+
+Not tried yet: ending a ball gap only where the players are also running, which would keep a
+stoppage with a visible ball dead.

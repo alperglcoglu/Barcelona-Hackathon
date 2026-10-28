@@ -20,6 +20,7 @@ Only counts are printed; no frame, position or image leaves the machine.
 """
 
 import argparse
+import hashlib
 import os
 import sys
 import time
@@ -210,6 +211,15 @@ def save(path, found):
     os.replace(tmp, path)
 
 
+def content_hash(found):
+    """sha256 of the cached detections themselves (not of the file), to compare two runs."""
+    digest = hashlib.sha256()
+    for frame in sorted(found):
+        digest.update(np.int64(frame).tobytes())
+        digest.update(np.round(np.asarray(found[frame], dtype=np.float64), 3).tobytes())
+    return digest.hexdigest()
+
+
 def load_cache(path):
     """{frame: (m, 3) candidates} from a cache file, empty if there is none."""
     if not os.path.isfile(path):
@@ -233,6 +243,7 @@ def extract(weights, game=GAME, imgsz=IMGSZ, device="auto"):
         save(path, found)
         print("  saved {} / {} frames".format(min(start + SAVE_EVERY, len(todo)), len(todo)),
               flush=True)
+    print("  detections sha256 {}".format(content_hash(found)))
     return path
 
 
@@ -271,9 +282,11 @@ def load_filled(data, game=GAME):
         raise SystemExit("no video ball cache at {}\nrun first:  python -m possession.video_ball "
                          "--weights football-ball-detection.pt".format(path))
     matrices, _, _ = load_homography(game)
+    found = load_cache(path)
     ball, filled = fill(features.interpolate_ball(data["ball"]), data["players"], data["pitch"],
-                        matrices, load_cache(path))
-    print("  video ball: {} frames filled".format(int(filled.sum())))
+                        matrices, found)
+    print("  video ball: {} frames filled (detections sha256 {})".format(
+        int(filled.sum()), content_hash(found)[:12]))
     return ball, filled
 
 

@@ -129,16 +129,17 @@ def test_frame_scores_ignore_video_ball_when_switched_off():
     players = np.concatenate([rng.uniform(0, 60, (n, 22, 2)), rng.uniform(0, 5, (n, 22, 1))], 2)
     data = {"ball": ball, "players": players, "team": np.array([0] * 11 + [1] * 11, np.int8),
             "pitch": PITCH}
-    base = methods.frame_scores(data)
-    video = ball.copy()
-    video[100:200] = players[100:200, 0, :2]                     # the video puts it at a home foot
-    data.update(video_ball=video, video_filled=np.isnan(ball[:, 0]))
-    assert config.VIDEO_BALL == 0
-    assert np.array_equal(base, methods.frame_scores(data))
-    config.VIDEO_BALL = 1
+    saved = config.VIDEO_BALL
     try:
+        config.VIDEO_BALL = 0
+        base = methods.frame_scores(data)
+        video = ball.copy()
+        video[100:200] = players[100:200, 0, :2]                 # the video puts it at a home foot
+        data.update(video_ball=video, video_filled=np.isnan(ball[:, 0]))
+        assert np.array_equal(base, methods.frame_scores(data))
+        config.VIDEO_BALL = 1
         on = methods.frame_scores(data)
     finally:
-        config.VIDEO_BALL = 0
+        config.VIDEO_BALL = saved
     assert on[100:200, 0].mean() > base[100:200, 0].mean()       # home evidence where it was silent
     assert on[120:180, 2].mean() < base[120:180, 2].mean()       # and the gap no longer reads dead

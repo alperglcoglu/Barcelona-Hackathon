@@ -142,8 +142,11 @@ LEARNED_CLIP = 4.0
 
 # -- video ball (possession/video_ball.py, docs/TECHNICAL.md section 13) -----------------------
 # A ball detector run on the tactical video fills frames on which the tracking has no ball. All
-# [fixed]: the tuning games have no video, so nothing here could be searched. Off by default.
-VIDEO_BALL = 0
+# [fixed]: the tuning games have no video, so nothing here could be searched. On: of the three
+# variants fixed before scoring, this one (all values below as they are) beat the previous frozen
+# file on the public window, spellF1 0.533 against 0.519 (section 13, with its costs). It needs the
+# cache written once by `python -m possession.video_ball`.
+VIDEO_BALL = 1
 # [fixed] Lowest box confidence used; the probe's calibration was read at this level.
 VIDEO_BALL_CONF = 0.25
 # [fixed] Metres from the median of the neighbouring detections beyond which a point is a box on

@@ -19,13 +19,26 @@ pip install -r requirements-dev.txt             # Python 3.9-3.14; no compiler n
 
 # unpack the gated match data into ./data (see data/README.md), or set MTAH_DATA_DIR
 python -m possession.pipeline --check-baseline         # one-off: loader reproduces the official floor
+
+# one-off: the ball detector on the tactical video (docs/TECHNICAL.md, sections 12-13), cached in
+# data/cache. About 1.5 h on a laptop GPU. With an NVIDIA GPU, install the CUDA build of torch
+# first (see requirements-cv.txt), or it runs on the CPU and takes far longer.
+pip install -r requirements-cv.txt gdown
+gdown -O football-ball-detection.pt "https://drive.google.com/uc?id=1isw4wx-MK9h9LMr36VvIWlJD6ppUvw7V"
+python -m possession.video_ball --weights football-ball-detection.pt
+
 python -m possession.pipeline                          # writes evaluation/results/<team>.csv
 python evaluation/validate_submission.py evaluation/results/<team>.csv
 python evaluation/run_evaluation.py                    # score on the public 5-minute window
 ```
 
-The pipeline prints the SHA-256 of the file it writes. The run is deterministic, so the same data
-and the package versions in `requirements-lock.txt` give the same hash as the submitted file.
+The pipeline prints the SHA-256 of the file it writes. Given the video ball cache, the run is
+deterministic, so the same data and the package versions in `requirements-lock.txt` give the same
+hash as the submitted file. The detector itself can differ in the last digits between GPUs and
+library versions, so both the extraction and the pipeline print a hash of the detections
+(`detections sha256`) to compare against the one recorded in docs/TECHNICAL.md, section 13.
+Without the cache the pipeline stops and says which command to run; `--set VIDEO_BALL=0` gives the
+previous, tracking-only submission.
 
 The first run parses the tracking once into `data/cache/`, which is gitignored like everything else under `data/`.
 
