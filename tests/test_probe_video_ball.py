@@ -8,17 +8,6 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_pixels_to_metres_inverts_the_homography():
-    from possession import probe_video_ball as probe
-    from starter.load_homography import project
-    matrix = np.array([[1500.0, 120.0, 210.0], [15.0, 700.0, 300.0], [0.02, 0.3, 1.0]])
-    pitch = (105.0, 68.0)
-    x, y = np.array([0.0, 30.0, 52.5, 104.0]), np.array([0.0, 10.0, 34.0, 60.0])
-    px, py = project(matrix, x / pitch[0], y / pitch[1])
-    back_x, back_y = probe.pixels_to_metres(matrix, px, py, pitch)
-    assert np.allclose(back_x, x) and np.allclose(back_y, y)
-
-
 def test_gap_runs_and_length_bins():
     from possession import probe_video_ball as probe
     missing = np.zeros(400, dtype=bool)
@@ -31,17 +20,6 @@ def test_gap_runs_and_length_bins():
     assert (bins[50:150] == 2).all() and (bins[200:] == 2).all()
 
 
-def test_pick_ball_takes_the_most_confident_ball_box():
-    from possession import probe_video_ball as probe
-    xyxy = [[0, 0, 10, 10], [100, 100, 110, 120], [200, 200, 204, 204]]
-    conf = [0.9, 0.4, 0.6]
-    cls = [2, 0, 0]                                        # class 2 is a player, 0 the ball
-    x, y, score = probe.pick_ball(xyxy, conf, cls, ball_ids=[0])
-    assert (x, y, score) == (202.0, 202.0, 0.6)
-    assert probe.pick_ball(xyxy, conf, cls, ball_ids=[5]) is None
-    assert probe.pick_ball(np.zeros((0, 4)), [], [], ball_ids=[0]) is None
-
-
 def test_sample_frames_is_deterministic_and_inside_the_mask():
     from possession import probe_video_ball as probe
     mask = np.zeros(10000, dtype=bool)
@@ -50,34 +28,3 @@ def test_sample_frames_is_deterministic_and_inside_the_mask():
     assert np.array_equal(a, b) and len(a) == 300 and mask[a].all()
     assert (np.diff(a) > 0).all()
     assert len(probe.sample_frames(mask, 10 ** 6)) == mask.sum()
-
-
-def test_pick_device_prefers_the_gpu_only_when_asked_for_auto():
-    from possession import probe_video_ball as probe
-    assert probe.pick_device("auto", True) == "0"
-    assert probe.pick_device("auto", False) == "cpu"
-    assert probe.pick_device("cpu", True) == "cpu"
-    assert probe.pick_device("1", True) == "1"
-
-
-def test_ball_candidates_keeps_the_most_confident_ball_boxes():
-    from possession import probe_video_ball as probe
-    xyxy = [[0, 0, 2, 2], [10, 10, 12, 12], [20, 20, 22, 22], [30, 30, 32, 32]]
-    conf = [0.3, 0.9, 0.5, 0.95]
-    cls = [0, 0, 0, 1]                                     # the last box is not a ball
-    c = probe.ball_candidates(xyxy, conf, cls, ball_ids=[0], k=2)
-    assert c.shape == (2, 3)
-    assert np.allclose(c[:, 2], [0.9, 0.5]) and np.allclose(c[0, :2], [11, 11])
-    assert probe.ball_candidates(xyxy, conf, cls, ball_ids=[7]).shape == (0, 3)
-
-
-def test_select_ball_rules():
-    from possession import probe_video_ball as probe
-    conf = np.array([0.9, 0.6, 0.4, 0.2])                  # sorted, as ball_candidates returns them
-    inside = np.array([False, True, True, True])
-    near = np.array([False, False, True, True])
-    assert probe.select_ball(conf, inside, near, "top") == 0
-    assert probe.select_ball(conf, inside, near, "on-pitch") == 1
-    assert probe.select_ball(conf, inside, near, "near-player") == 2
-    assert probe.select_ball(conf, inside, near, "near-player", min_conf=0.5) == -1
-    assert probe.select_ball(conf[:0], inside[:0], near[:0], "top") == -1

@@ -37,17 +37,16 @@ All three are public, so the method stays one the organisers can access (RULES.m
 """
 
 import argparse
-import os
 import sys
-import time
 
 import numpy as np
 
 from . import config, features, io_atd, submission
+from .video_ball import MAX_CANDIDATES, NEAR_PLAYER, detect, frame_candidates, select_ball
 
 sys.path.insert(0, config.ROOT)
 from games import GAME, half_video_blocks, video_path  # noqa: E402
-from starter.load_homography import load as load_homography, unproject  # noqa: E402
+from starter.load_homography import load as load_homography  # noqa: E402
 
 # Params
 FPS = 25
@@ -57,11 +56,6 @@ CONF_LEVELS = (0.1, 0.25, 0.5)
 DECIDE_CONF = 0.25                 # confidence used for the go / stop line
 DECIDE_ERROR = 2.0                 # metres: calibration median error must be below this
 DECIDE_FILL = 0.30                 # share of live gap frames that must get an on-pitch ball
-ON_PITCH_MARGIN = 2.0              # metres beyond the lines still counted as on the pitch
-SEEK_AHEAD = 50                    # frames: closer than this, read forward instead of seeking
-PROGRESS = 100                     # frames between progress lines
-MAX_CANDIDATES = 5                 # ball boxes kept per frame
-NEAR_PLAYER = 2.0                  # metres: a ball this close to a player is at someone's feet
 RULES = ("top", "on-pitch", "near-player")
 QUANTILES = (10, 25, 50, 75, 90)
 
@@ -111,137 +105,12 @@ def pace_ratio(players):
     return mean_speed / typical
 
 
-def pixels_to_metres(matrix, pixel_x, pixel_y, pitch):
-    """Image pixels -> pitch metres, through the frame's homography (which maps normalised 0-1
-    pitch coordinates to pixels) and the pitch size, the same scale io_atd uses."""
-    x, y = unproject(matrix, pixel_x, pixel_y)
-    return x * float(pitch[0]), y * float(pitch[1])
-
-
-def ball_candidates(xyxy, conf, cls, ball_ids, k=MAX_CANDIDATES):
-    """(m, 3) array of [centre_x, centre_y, confidence] for up to k ball boxes, most confident first."""
-    xyxy, conf, cls = np.asarray(xyxy, float).reshape(-1, 4), np.asarray(conf, float), np.asarray(cls)
-    keep = np.flatnonzero(np.isin(cls, list(ball_ids)))
-    keep = keep[np.argsort(-conf[keep], kind="stable")][:k]
-    return np.column_stack([(xyxy[keep, 0] + xyxy[keep, 2]) / 2.0,
-                            (xyxy[keep, 1] + xyxy[keep, 3]) / 2.0, conf[keep]])
-
-
-def pick_ball(xyxy, conf, cls, ball_ids):
-    """(centre_x, centre_y, confidence) of the most confident ball box, or None if there is none."""
-    candidates = ball_candidates(xyxy, conf, cls, ball_ids, k=1)
-    return tuple(candidates[0]) if len(candidates) else None
-
-
-def select_ball(conf, inside, near, rule, min_conf=0.0):
-    """Index of the candidate a rule picks, or -1. Candidates are sorted by confidence.
-
-      top          the most confident box, wherever it is
-      on-pitch     the most confident box on the pitch
-      near-player  the most confident box on the pitch with a player within NEAR_PLAYER metres
-    """
-    ok = np.asarray(conf) >= min_conf
-    if rule == "on-pitch":
-        ok &= np.asarray(inside, dtype=bool)
-    elif rule == "near-player":
-        ok &= np.asarray(inside, dtype=bool) & np.asarray(near, dtype=bool)
-    elif rule != "top":
-        raise ValueError(rule)
-    hits = np.flatnonzero(ok)
-    if rule == "top":
-        return 0 if len(ok) and ok[0] else -1
-    return int(hits[0]) if len(hits) else -1
-
-
 def sample_frames(mask, n, seed=0):
     """Up to n frame indices drawn without replacement where mask is True, sorted."""
     candidates = np.flatnonzero(mask)
     if len(candidates) <= n:
         return candidates
     return np.sort(np.random.default_rng(seed).choice(candidates, n, replace=False))
-
-
-def on_pitch(x, y, pitch, margin=ON_PITCH_MARGIN):
-    return (x > -margin) & (x < pitch[0] + margin) & (y > -margin) & (y < pitch[1] + margin)
-
-
-def read_frames(path, frames):
-    """Yield (frame, image) for sorted frame indices, reading forward over short distances."""
-    import cv2
-    capture = cv2.VideoCapture(path)
-    if not capture.isOpened():
-        raise IOError("cannot open {}".format(path))
-    position = None
-    try:
-        for frame in frames:
-            if position is None or not 0 <= frame - position <= SEEK_AHEAD:
-                capture.set(cv2.CAP_PROP_POS_FRAMES, int(frame))
-                position = int(frame)
-            while position < frame:
-                capture.grab()
-                position += 1
-            ok, image = capture.read()
-            position += 1
-            if ok:
-                yield int(frame), image
-    finally:
-        capture.release()
-
-
-def pick_device(requested, cuda_available):
-    """"0" (the first GPU) or "cpu" for --device auto; anything else is passed through."""
-    if requested != "auto":
-        return requested
-    return "0" if cuda_available else "cpu"
-
-
-def report_device(requested):
-    """Choose the device and say which one runs, so a CPU-only torch install is noticed at once."""
-    import torch
-    cuda = torch.cuda.is_available()
-    device = pick_device(requested, cuda)
-    gpu = torch.cuda.get_device_name(0) if cuda else "none"
-    print("  torch {}, CUDA available: {}, GPU: {}, running on: {}".format(
-        torch.__version__, cuda, gpu, device))
-    if device == "cpu":
-        print("  WARNING: running on the CPU, which is slow. With an NVIDIA GPU, install the CUDA "
-              "build of torch:\n    pip uninstall -y torch torchvision\n    pip install torch "
-              "torchvision --index-url https://download.pytorch.org/whl/cu124")
-    return device
-
-
-def detect(weights, path, frames, imgsz, conf, device="auto"):
-    """{frame: ball_candidates array} for every frame read, and frames/s.
-
-    Prints a progress line every PROGRESS frames (counts only) and, at the end, how the time splits
-    between reading the video and running the model.
-    """
-    from ultralytics import YOLO
-    device = report_device(device)
-    model = YOLO(weights)
-    ball_ids = [i for i, name in model.names.items() if "ball" in str(name).lower()]
-    if not ball_ids:
-        raise SystemExit("the model has no class named like 'ball': {}".format(model.names))
-    print("  ball classes: {}".format([model.names[i] for i in ball_ids]))
-    found, start = {}, time.time()
-    reading = predicting = 0.0
-    total, done = len(frames), 0
-    tick = time.time()
-    for frame, image in read_frames(path, frames):
-        now = time.time()
-        reading += now - tick
-        boxes = model.predict(image, imgsz=imgsz, conf=conf, device=device, verbose=False)[0].boxes
-        found[frame] = ball_candidates(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy(),
-                                       boxes.cls.cpu().numpy(), ball_ids)
-        tick = time.time()
-        predicting += tick - now
-        done += 1
-        if done % PROGRESS == 0 or done == total:
-            rate = done / max(tick - start, 1e-9)
-            print("  {}/{} frames, {:.1f} frames/s, about {:.1f} min left".format(
-                done, total, rate, (total - done) / rate / 60), flush=True)
-    print("  time: reading the video {:.0f} s, running the model {:.0f} s".format(reading, predicting))
-    return found, total / max(time.time() - start, 1e-9)
 
 
 def part_a(missing, graded, live_labels, live_pace, bins):
@@ -264,23 +133,6 @@ def part_a(missing, graded, live_labels, live_pace, bins):
     print("  {:<9} {:>9} {:>11} {:>12} {:>12}".format(
         "all", int(sel.sum()), "100.0%",
         share(live_labels[sel]) if live_labels is not None else "n/a", share(live_pace[sel])))
-
-
-def frame_candidates(candidates, matrix, frame_players, pitch):
-    """Candidates of one frame on the pitch: (xy metres, conf, inside, nearest player distance)."""
-    if candidates is None or len(candidates) == 0:
-        empty = np.zeros(0)
-        return np.zeros((0, 2)), empty, empty.astype(bool), empty
-    x, y = pixels_to_metres(matrix, candidates[:, 0], candidates[:, 1], pitch)
-    xy = np.column_stack([x, y])
-    seen = ~np.isnan(frame_players[:, 0])
-    if seen.any():
-        d = np.hypot(xy[:, None, 0] - frame_players[None, seen, 0],
-                     xy[:, None, 1] - frame_players[None, seen, 1])
-        nearest = d.min(axis=1)
-    else:
-        nearest = np.full(len(xy), np.inf)
-    return xy, candidates[:, 2], on_pitch(x, y, pitch), nearest
 
 
 def choose(found, frames, matrices, players, pitch, rule, min_conf):

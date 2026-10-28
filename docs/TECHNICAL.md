@@ -735,3 +735,64 @@ Part A also showed that, by the frozen model's labels, only 1.4% of graded frame
 ball missing. That figure is partly circular, because the model reads a long gap as a stoppage. The
 probe therefore also gives the live share by the players' pace, and looks for an on-pitch ball at a
 player's feet on gap frames the model calls dead.
+
+Second run, roboflow model only, 1000 frames per sample, confidence 0.25:
+
+| rule | calibration detected | error p25 / p50 / p75 (m) | within 2 m | live gaps filled |
+|---|---|---|---|---|
+| most confident | 85% | 0.6 / 3.1 / 24.1 | 44% | (59%) |
+| most confident on the pitch | 75% | 0.4 / 1.4 / 7.5 | 58% | 59% |
+| on the pitch, player within 2 m | 49% | 0.5 / 2.2 / 16.9 | 48% | 51% |
+
+Only the on-pitch rule passes (GO). Requiring a nearby player is worse: it prefers less confident
+boxes on players' feet and socks over a ball in flight. On the live gap frames the on-pitch ball has
+a player within 2 m 84% of the time, and that player's team agrees with the frozen labels 75% of
+the time.
+
+Live share of the missing frames, by the frozen labels and by the players' pace:
+
+| gap | share of missing frames | live by labels | live by pace |
+|---|---|---|---|
+| 4-10 s | 14.5% | 19.8% | 84.0% |
+| >= 10 s | 85.4% | 0.5% | 51.4% |
+| all | 100% | 3.4% | 56.2% |
+
+The pace threshold (`DEAD_SPEED_RATIO`) is lenient, so the pace figure is an upper bound. But the
+gap is large, and the public window agrees in direction: there the model calls `D` on 98% of the
+391 live frames without a ball (`python -m possession.diagnose`). Long gaps are the model's main
+source of false stoppages, which is what the video ball can address. On gap frames the model calls
+dead, an on-pitch ball is found about as often (49%), so a visible ball alone does not mean live
+play. The pace evidence and the Viterbi still have to decide that.
+
+## 13. The video ball in the model
+
+`possession/video_ball.py` runs the detector once on every graded frame without a tracked ball
+(about 64,600) and caches every candidate box (up to five per frame) in `data/cache`. `fill()` then
+picks, on each such frame:
+- the most confident box on the pitch at confidence 0.25 or more, the rule that passed the probe;
+- the box mapped to metres through the tactical homography;
+- the point dropped if it lies more than 3 m from the median of its detections within 5 frames on
+  each side (`VIDEO_BALL_JUMP`, `VIDEO_BALL_SMOOTH`), because a box on another object jumps while
+  the ball moves smoothly.
+
+Frames with a tracked ball are never changed.
+
+With `VIDEO_BALL = 1`, `methods.frame_scores` uses the filled ball for the team evidence, the touch
+and hand-over cues and the dead-ball evidence. Two switches decide how far it reaches:
+`VIDEO_BALL_WEIGHT` scales the team evidence on filled frames, and `VIDEO_BALL_BREAKS_GAPS` decides
+whether a filled frame ends a ball gap for `long_gap` (1) or the gap is still read from the
+tracking alone (0). The tuning games have no video, so every value is fixed in advance, not
+searched. The default is off, which leaves the frozen submission unchanged.
+
+Three variants were fixed before any of them was scored, and are checked on the public window
+against the frozen file (spellF1 0.519), following the freeze rule:
+
+| variant | settings |
+|---|---|
+| vb | `VIDEO_BALL=1` |
+| vb_team | `VIDEO_BALL=1 VIDEO_BALL_BREAKS_GAPS=0` (team evidence only) |
+| vb_half | `VIDEO_BALL=1 VIDEO_BALL_WEIGHT=0.5` |
+
+### Result
+
+Pending.
