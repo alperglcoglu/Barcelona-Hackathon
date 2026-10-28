@@ -46,6 +46,7 @@ possession/             our code
   diagnose.py           aggregate-only signal checks on the real data
   broadcast.py          TV feed aligned to the tactical timeline (dead-ball cue)
   diagnose_tv.py        aggregate-only checks of where the TV cue goes wrong
+  probe_video_ball.py   aggregate-only probe: is the ball visible in the video where tracking loses it
 tuning/                 parameter search on Metrica's sample games and SkillCorner's open matches
 tests/                  run without the match data: python -m pytest tests
 docs/TECHNICAL.md       the technical document submitted with the entry

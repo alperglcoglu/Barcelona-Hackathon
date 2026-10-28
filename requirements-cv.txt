@@ -1,0 +1,5 @@
+# Only for possession/probe_video_ball.py (part B), which runs a ball detector on the tactical video.
+# The pipeline and the submitted file do not need these.
+-r requirements.txt
+opencv-python>=4.8,<5
+ultralytics>=8.1,<9

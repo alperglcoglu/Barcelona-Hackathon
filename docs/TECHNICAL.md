@@ -661,3 +661,55 @@ spellF1 by about 0.03), and the duration model won on all 13 tuning games. But t
 change must beat the frozen file where it is checked, and choosing the other way would be tuning on
 judgement. The duration variant did add two possessions (12 against 10), the direction BAR-ATH
 needs, but they did not match: more possessions alone are not the goal.
+
+## 12. Ball gaps and the video: a feasibility probe
+
+### Why
+
+The ball is missing on 40.7% of graded frames. Two things already handle it: gaps of up to
+`BALL_MAX_GAP` frames are bridged with a straight line (section 1; the search preferred a short
+bridge), and long gaps count as evidence of a stoppage (`features.long_gap`). Between those, a long
+gap in open play leaves the ball-based team evidence silent for seconds, and only the slow width
+evidence (section 8) speaks. The ground truth is derived from corrected tracking (CHALLENGE.md), so
+it knows where the ball is on those frames. The broadcast tracking fills only 9% of the gaps
+(section 7).
+
+The tactical video is the remaining source. Its homography is valid on every frame, so a ball found
+in a frame maps straight back to the pitch in metres. That is worth building only if the ball is
+actually visible in the video where the tracker loses it, and if a detector places it accurately
+enough for the nearest-player evidence (`CONTROL_SIGMA` 0.8 m) to use. `possession/probe_video_ball.py`
+measures both before anything enters the model.
+
+### An open football pipeline considered
+
+[abdullahtarek/football_analysis](https://github.com/abdullahtarek/football_analysis) is a popular
+open project: YOLO detection of players, referees and the ball, ByteTrack, team assignment by
+shirt colour (k-means), camera motion by optical flow, a perspective transform, and team ball
+control as "the player nearest to the ball within 70 px, carried forward". Most of it duplicates
+what the provided data already gives, better: the tracking has players in metres with their team,
+and the homography replaces the camera-motion and perspective steps. Its ball control rule is the
+nearest-player rule that the official baseline already implements. The one part the provided data
+lacks is a ball detector that works where the tracker has lost the ball, so that is the only part
+taken, and only as an idea: any public YOLO weights with a ball class can be used (its `best.pt`,
+the ball model of [roboflow/sports](https://github.com/roboflow/sports), or a generic COCO model).
+
+### What the probe measures (aggregates only)
+
+- **Part A, tracking only.** Missing graded frames by gap length (< 1 s, 1-4 s, 4-10 s, >= 10 s),
+  and the share of them in live play: by the labels of a given submission file (the frozen model's
+  own output, not ground truth) or, without one, by the players' pace against the match's median.
+  Live missing frames are the most a video detector could inform.
+- **Part B, video** (`--weights`, packages in `requirements-cv.txt`). On a seeded sample of
+  frames: on calibration frames, where the tracking has the ball, the distance between detection
+  and tracked ball; on live gap frames, how often a ball is found on the pitch, by gap length, how
+  far the nearest player is from it and whether that player's team agrees with the labels. The
+  detected box centre is mapped to the pitch with `starter/load_homography.unproject`.
+- **Decision.** Build the detector into the model only if the calibration median error is below
+  2 m and at least 30% of live gap frames get an on-pitch ball at confidence 0.25. Both thresholds
+  are fixed in advance and use no labels of BAR-ATH.
+
+The probe changes nothing in the submission: the pipeline does not read it.
+
+### Result
+
+Pending: Alper runs the probe locally and only its summary numbers are recorded here.
