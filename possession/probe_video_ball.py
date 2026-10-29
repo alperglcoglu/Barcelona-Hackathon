@@ -1,7 +1,7 @@
 """Is the ball visible in the video where the tracking loses it? Aggregate diagnostics, no labels.
 
-    python -m possession.probe_video_ball [--labels evaluation/results/team.csv]
-    python -m possession.probe_video_ball --labels evaluation/results/team.csv --weights best.pt
+    python -m possession.probe_video_ball [--labels evaluation/results/La_Messia.csv]
+    python -m possession.probe_video_ball --labels evaluation/results/La_Messia.csv --weights best.pt
 
 Prints counts, shares and quantiles only, so the output is safe to share. It writes no file and no
 image.
@@ -222,7 +222,7 @@ def part_b(args, data, missing, graded, live, dead, running, bins, labels):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--labels", help="a submission CSV (e.g. the frozen team.csv) to say which "
+    parser.add_argument("--labels", help="a submission CSV (e.g. the submitted La_Messia.csv) to say which "
                         "frames are live; without it the players' pace decides")
     parser.add_argument("--weights", help="YOLO weights; without it only part A runs")
     parser.add_argument("--n", type=int, default=2000, help="frames per sample (default 2000)")
