@@ -905,6 +905,35 @@ The physical constants are Spearman's and fixed. The evidence is added to the te
 `PITCH_CONTROL_WEIGHT`, which is chosen on the 13 tuning games (never on BAR-ATH). Only after that
 is the result checked on the public window against the submitted file (spellF1 0.533).
 
-### Result
+### Result: not adopted (fails on the tuning games)
 
-Pending.
+Mean spellF1 over the 13 tuning games, two degradations each. The current configuration scores
+0.428 (`python -m tuning.search --games all --evaluate`). First the weight alone
+(`python -m tuning.segmentation --games all --sweep PITCH_CONTROL_WEIGHT=...`):
+
+| weight | spellF1 | predicted possessions (true 4058) | short interruptions missed | spurious changes |
+|---|---|---|---|---|
+| 0 | **0.428** | 2708 | 544 / 831 | 1532 |
+| 0.25 | 0.398 | 3172 | 534 / 831 | 1849 |
+| 0.5 | 0.349 | 3941 | 522 / 831 | 2414 |
+| 1 | 0.281 | 5500 | 508 / 831 | 3534 |
+| 2 | 0.208 | 7878 | 498 / 831 | 5182 |
+
+The pitch control term catches only a few more short interruptions, and it brings many more
+spurious changes. Between passes it swings from one team to the other whenever the ball is in
+flight, and the Viterbi follows it.
+
+A switch cost re-chosen with the weight does not rescue it:
+
+| weight \ `SWITCH_COST` | 6 | 9 | 13 | 18 | 25 |
+|---|---|---|---|---|---|
+| 0 | **0.428** | 0.418 | 0.397 | 0.381 | 0.362 |
+| 0.1 | 0.419 | 0.416 | 0.400 | 0.383 | 0.367 |
+| 0.25 | 0.398 | 0.405 | 0.397 | 0.384 | 0.365 |
+| 0.5 | 0.349 | 0.376 | 0.388 | 0.383 | 0.371 |
+
+No combination beats the current configuration, so the weight stays 0 and BAR-ATH was not scored
+with it: the protocol checks the public window only after a gain on the tuning games. The function
+stays for later use. Pitch control may still help as a hand-over cue (lowering the switch cost
+where the new team clearly gets to the ball first) rather than as evidence on every frame. That
+variant was not tried.
