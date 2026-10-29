@@ -851,6 +851,21 @@ One variant, fixed before scoring, checked against the current submission (spell
 |---|---|
 | vb_pace | `VIDEO_BALL_GAP_PACE=1` (everything else as submitted) |
 
-### Result
+### Result: not adopted
 
-Pending.
+| | spellF1 | macroF1 | true `D` called `A` | transF1 | full match: `D` | full match: possessions |
+|---|---|---|---|---|---|---|
+| submitted (vb, section 13) | 0.533 | **0.824** | 181 | 0.235 | 62,234 | 203 |
+| vb_pace | 0.533 | 0.824 | 171 | **0.294** | 65,614 | 193 |
+
+The ranking metric is tied. The spell scores agree at every IoU threshold, with the same 8 of 17
+possessions matched. The tie-break, macroF1, is lower by 0.0005 (0.8239 against 0.8244). The
+freeze rule takes a change only if it wins, so the switch stays off (`VIDEO_BALL_GAP_PACE = 0`).
+
+The change does what it was meant to do, only too little to move a possession:
+- 10 fewer true `D` frames are called `A` in the window.
+- One more transition is matched within ±25 frames (transF1 0.235 → 0.294).
+- On the full match it gives back about a fifth of the dead time the video ball removed: `D`
+  frames go from 62,234 to 65,614, against 77,858 before the video ball.
+
+The code stays, for ablation with `--set VIDEO_BALL_GAP_PACE=1`.
