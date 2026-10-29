@@ -830,3 +830,27 @@ numbers do and do not say:
 
 Not tried yet: ending a ball gap only where the players are also running, which would keep a
 stoppage with a visible ball dead.
+
+## 14. Ending a ball gap only while the players run
+
+Section 13 left a cost: with the video ball, true dead frames called `A` in the public window rose
+from 77 to 181, and transition timing got worse. The likely cause is a set piece. The ball sits
+on the pitch in view of the camera, the video fills the gap, and the long-gap dead-ball evidence
+(`features.long_gap`) is gone, although play is stopped.
+
+`VIDEO_BALL_GAP_PACE = 1` lets a filled frame end a ball gap only where the players run: their
+mean pace, averaged over ±1 s and divided by the match's typical pace (`features.pace_ratio`, the
+quantity the dead-ball evidence already uses), is above `DEAD_SPEED_RATIO`. Where they walk, the
+gap still counts as a stoppage. The filled ball keeps feeding the team evidence on every filled
+frame. The threshold is the existing one, so nothing new is chosen. `features.pace_ratio` was
+split out of `dead_evidence` unchanged, and its output is identical.
+
+One variant, fixed before scoring, checked against the current submission (spellF1 0.533):
+
+| variant | settings |
+|---|---|
+| vb_pace | `VIDEO_BALL_GAP_PACE=1` (everything else as submitted) |
+
+### Result
+
+Pending.

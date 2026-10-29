@@ -143,3 +143,28 @@ def test_frame_scores_ignore_video_ball_when_switched_off():
         config.VIDEO_BALL = saved
     assert on[100:200, 0].mean() > base[100:200, 0].mean()       # home evidence where it was silent
     assert on[120:180, 2].mean() < base[120:180, 2].mean()       # and the gap no longer reads dead
+
+
+def test_gap_pace_keeps_a_stoppage_with_the_ball_in_view():
+    from possession import config, methods
+    rng = np.random.default_rng(4)
+    n = 400
+    ball = rng.uniform(10, 60, (n, 2))
+    ball[100:300] = np.nan                                       # one long tracking gap
+    players = np.concatenate([rng.uniform(0, 60, (n, 22, 2)), np.full((n, 22, 1), 3.0)], 2)
+    players[100:200, :, 2] = 0.5                                 # first half of the gap: walking
+    video = ball.copy()
+    video[100:300] = (30.0, 30.0)                                # the video sees the ball throughout
+    data = {"ball": ball, "players": players, "team": np.array([0] * 11 + [1] * 11, np.int8),
+            "pitch": PITCH, "video_ball": video, "video_filled": np.isnan(ball[:, 0])}
+    saved = config.VIDEO_BALL, config.VIDEO_BALL_GAP_PACE
+    try:
+        config.VIDEO_BALL = 1
+        config.VIDEO_BALL_GAP_PACE = 0
+        plain = methods.frame_scores(data)[:, 2]
+        config.VIDEO_BALL_GAP_PACE = 1
+        paced = methods.frame_scores(data)[:, 2]
+    finally:
+        config.VIDEO_BALL, config.VIDEO_BALL_GAP_PACE = saved
+    assert (paced[130:170] > plain[130:170]).all()               # walking: the gap still reads dead
+    assert np.allclose(paced[230:270], plain[230:270])           # running: the video ends the gap

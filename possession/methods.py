@@ -73,7 +73,14 @@ def frame_scores(data, events=None):
     if config.VIDEO_BALL and "video_ball" in data:
         ball = data["video_ball"]
         if config.VIDEO_BALL_BREAKS_GAPS:
-            gap_ball = ball
+            if config.VIDEO_BALL_GAP_PACE:
+                # A filled frame ends the gap only while the players are running: during a set
+                # piece the video sees the ball on the pitch, but play is still stopped.
+                with np.errstate(invalid="ignore"):
+                    running = features.pace_ratio(data["players"]) > config.DEAD_SPEED_RATIO
+                gap_ball = np.where((data["video_filled"] & ~running)[:, None], gap_ball, ball)
+            else:
+                gap_ball = ball
     team = features.team_evidence(ball, data["players"], data["team"])
     if config.VIDEO_BALL and "video_filled" in data:
         team = np.where(data["video_filled"], config.VIDEO_BALL_WEIGHT * team, team)
