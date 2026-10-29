@@ -69,14 +69,21 @@ def frame_scores(data, events=None):
     two columns are features.handover_cue, read by decode for the evidence-dependent switch cost;
     they are not scores and are never weighted.
     """
-    ball = features.interpolate_ball(data["ball"])
+    ball = gap_ball = features.interpolate_ball(data["ball"])
+    if config.VIDEO_BALL and "video_ball" in data:
+        ball = data["video_ball"]
+        if config.VIDEO_BALL_BREAKS_GAPS:
+            gap_ball = ball
     team = features.team_evidence(ball, data["players"], data["team"])
+    if config.VIDEO_BALL and "video_filled" in data:
+        team = np.where(data["video_filled"], config.VIDEO_BALL_WEIGHT * team, team)
     if config.WIDTH_WEIGHT > 0:
         team = team + config.WIDTH_WEIGHT * features.width_evidence(data["players"], data["team"])
     team = config.TEAM_WEIGHT * team
     if events:
         team = team + tagging_prior.team_prior(events, len(team))
-    dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"])
+    dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"],
+                                                       gap_ball)
     cue = features.handover_cue(ball, data["players"], data["team"])
     if events:
         cue = np.maximum(cue, tagging_prior.transition_cue(events, len(cue)))

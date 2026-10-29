@@ -139,3 +139,23 @@ TV_LENGTH_BINS = (3, 8, 20)
 # -- learned evidence (methods.learned, possession/learned.py) ---------------------------------
 # A single frame's log-odds is clipped to this, so no one frame can force a change of state alone.
 LEARNED_CLIP = 4.0
+
+# -- video ball (possession/video_ball.py, docs/TECHNICAL.md section 13) -----------------------
+# A ball detector run on the tactical video fills frames on which the tracking has no ball. All
+# [fixed]: the tuning games have no video, so nothing here could be searched. On: of the three
+# variants fixed before scoring, this one (all values below as they are) beat the previous frozen
+# file on the public window, spellF1 0.533 against 0.519 (section 13, with its costs). It needs the
+# cache written once by `python -m possession.video_ball`.
+VIDEO_BALL = 1
+# [fixed] Lowest box confidence used; the probe's calibration was read at this level.
+VIDEO_BALL_CONF = 0.25
+# [fixed] Metres from the median of the neighbouring detections beyond which a point is a box on
+# something else (the probe's calibration error has a long tail of 20-45 m mistakes).
+VIDEO_BALL_JUMP = 3.0
+# [fixed] Frames on each side for that median.
+VIDEO_BALL_SMOOTH = 5
+# [fixed] Scale of the team evidence on filled frames, below 1 to trust the video less.
+VIDEO_BALL_WEIGHT = 1.0
+# [fixed] 1: a filled frame ends a ball gap for features.long_gap, so a gap in which the video
+# sees the ball no longer reads as a stoppage; 0: long_gap reads the tracking ball only.
+VIDEO_BALL_BREAKS_GAPS = 1

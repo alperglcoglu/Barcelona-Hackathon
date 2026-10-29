@@ -15,7 +15,7 @@ import sys
 
 import numpy as np
 
-from . import broadcast, config, io_atd, io_tagging, methods, submission
+from . import broadcast, config, io_atd, io_tagging, methods, submission, video_ball
 
 sys.path.insert(0, config.ROOT)
 from games import GAME, source_frames  # noqa: E402
@@ -72,6 +72,8 @@ def main(argv=None):
     data = io_atd.load(GAME, args.data_dir, use_cache=not args.no_cache)
     if args.check_baseline:
         return 0 if check_baseline(data) else 1
+    if config.VIDEO_BALL:
+        data["video_ball"], data["video_filled"] = video_ball.load_filled(data, GAME)
 
     method = methods.METHODS[args.method]
     events = None

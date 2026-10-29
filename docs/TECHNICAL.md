@@ -661,3 +661,168 @@ spellF1 by about 0.03), and the duration model won on all 13 tuning games. But t
 change must beat the frozen file where it is checked, and choosing the other way would be tuning on
 judgement. The duration variant did add two possessions (12 against 10), the direction BAR-ATH
 needs, but they did not match: more possessions alone are not the goal.
+
+## 12. Ball gaps and the video: a feasibility probe
+
+### Why
+
+The ball is missing on 40.7% of graded frames. Two things already handle it: gaps of up to
+`BALL_MAX_GAP` frames are bridged with a straight line (section 1; the search preferred a short
+bridge), and long gaps count as evidence of a stoppage (`features.long_gap`). Between those, a long
+gap in open play leaves the ball-based team evidence silent for seconds, and only the slow width
+evidence (section 8) speaks. The ground truth is derived from corrected tracking (CHALLENGE.md), so
+it knows where the ball is on those frames. The broadcast tracking fills only 9% of the gaps
+(section 7).
+
+The tactical video is the remaining source. Its homography is valid on every frame, so a ball found
+in a frame maps straight back to the pitch in metres. That is worth building only if the ball is
+actually visible in the video where the tracker loses it, and if a detector places it accurately
+enough for the nearest-player evidence (`CONTROL_SIGMA` 0.8 m) to use. `possession/probe_video_ball.py`
+measures both before anything enters the model.
+
+### An open football pipeline considered
+
+[abdullahtarek/football_analysis](https://github.com/abdullahtarek/football_analysis) is a popular
+open project: YOLO detection of players, referees and the ball, ByteTrack, team assignment by
+shirt colour (k-means), camera motion by optical flow, a perspective transform, and team ball
+control as "the player nearest to the ball within 70 px, carried forward". Most of it duplicates
+what the provided data already gives, better: the tracking has players in metres with their team,
+and the homography replaces the camera-motion and perspective steps. Its ball control rule is the
+nearest-player rule that the official baseline already implements. The one part the provided data
+lacks is a ball detector that works where the tracker has lost the ball, so that is the only part
+taken, and only as an idea: any public YOLO weights with a ball class can be used (its `best.pt`,
+the ball model of [roboflow/sports](https://github.com/roboflow/sports), or a generic COCO model).
+
+### What the probe measures (aggregates only)
+
+- **Part A, tracking only.** Missing graded frames by gap length (< 1 s, 1-4 s, 4-10 s, >= 10 s),
+  and the share of them in live play: by the labels of a given submission file (the frozen model's
+  own output, not ground truth) or, without one, by the players' pace against the match's median.
+  Live missing frames are the most a video detector could inform.
+- **Part B, video** (`--weights`, packages in `requirements-cv.txt`). On a seeded sample of
+  frames: on calibration frames, where the tracking has the ball, the distance between detection
+  and tracked ball; on live gap frames, how often a ball is found on the pitch, by gap length, how
+  far the nearest player is from it and whether that player's team agrees with the labels. The
+  detected box centre is mapped to the pitch with `starter/load_homography.unproject`.
+- **Decision.** Build the detector into the model only if the calibration median error is below
+  2 m and at least 30% of live gap frames get an on-pitch ball at confidence 0.25. Both thresholds
+  are fixed in advance and use no labels of BAR-ATH.
+
+The probe changes nothing in the submission: the pipeline does not read it.
+
+### Result
+
+First run on BAR-ATH (Alper's machine, 500 calibration and 500 live gap frames, confidence 0.25,
+the most confident box per frame):
+
+| | roboflow/sports ball model | abdullahtarek best.pt |
+|---|---|---|
+| calibration: ball detected | 86% | 71% |
+| calibration: error p25 / p50 / p75 (m) | 0.7 / 2.6 / 23.6 | 1.1 / 10.9 / 35.8 |
+| live gaps: ball found on the pitch | 49% | 37% |
+| nearest player to that ball within 2 m | 85% | 44% |
+| that player's team agrees with the labels | 77% | 54% |
+
+Both were STOP under the fixed thresholds. The roboflow model is clearly better, so the other one
+is dropped. Its error is bimodal: about half of the detections are within 1 m of the tracked ball
+and most of the rest are 20-45 m away, another ball-like object (a spare ball by the touchline, a
+pitch marking). Taking the most confident box anywhere in the frame lets those win. The probe now
+keeps up to five candidates per frame and compares three selection rules, all label-free: the most
+confident box, the most confident box on the pitch, and the most confident box on the pitch with a
+player within 2 m.
+
+Part A also showed that, by the frozen model's labels, only 1.4% of graded frames are live with the
+ball missing. That figure is partly circular, because the model reads a long gap as a stoppage. The
+probe therefore also gives the live share by the players' pace, and looks for an on-pitch ball at a
+player's feet on gap frames the model calls dead.
+
+Second run, roboflow model only, 1000 frames per sample, confidence 0.25:
+
+| rule | calibration detected | error p25 / p50 / p75 (m) | within 2 m | live gaps filled |
+|---|---|---|---|---|
+| most confident | 85% | 0.6 / 3.1 / 24.1 | 44% | (59%) |
+| most confident on the pitch | 75% | 0.4 / 1.4 / 7.5 | 58% | 59% |
+| on the pitch, player within 2 m | 49% | 0.5 / 2.2 / 16.9 | 48% | 51% |
+
+Only the on-pitch rule passes (GO). Requiring a nearby player is worse: it prefers less confident
+boxes on players' feet and socks over a ball in flight. On the live gap frames the on-pitch ball has
+a player within 2 m 84% of the time, and that player's team agrees with the frozen labels 75% of
+the time.
+
+Live share of the missing frames, by the frozen labels and by the players' pace:
+
+| gap | share of missing frames | live by labels | live by pace |
+|---|---|---|---|
+| 4-10 s | 14.5% | 19.8% | 84.0% |
+| >= 10 s | 85.4% | 0.5% | 51.4% |
+| all | 100% | 3.4% | 56.2% |
+
+The pace threshold (`DEAD_SPEED_RATIO`) is lenient, so the pace figure is an upper bound. But the
+gap is large, and the public window agrees in direction: there the model calls `D` on 98% of the
+391 live frames without a ball (`python -m possession.diagnose`). Long gaps are the model's main
+source of false stoppages, which is what the video ball can address. On gap frames the model calls
+dead, an on-pitch ball is found about as often (49%), so a visible ball alone does not mean live
+play. The pace evidence and the Viterbi still have to decide that.
+
+## 13. The video ball in the model
+
+`possession/video_ball.py` runs the detector once on every graded frame without a tracked ball
+(about 64,600) and caches every candidate box (up to five per frame) in `data/cache`. `fill()` then
+picks, on each such frame:
+- the most confident box on the pitch at confidence 0.25 or more, the rule that passed the probe;
+- the box mapped to metres through the tactical homography;
+- the point dropped if it lies more than 3 m from the median of its detections within 5 frames on
+  each side (`VIDEO_BALL_JUMP`, `VIDEO_BALL_SMOOTH`), because a box on another object jumps while
+  the ball moves smoothly.
+
+Frames with a tracked ball are never changed.
+
+With `VIDEO_BALL = 1`, `methods.frame_scores` uses the filled ball for the team evidence, the touch
+and hand-over cues and the dead-ball evidence. Two switches decide how far it reaches:
+`VIDEO_BALL_WEIGHT` scales the team evidence on filled frames, and `VIDEO_BALL_BREAKS_GAPS` decides
+whether a filled frame ends a ball gap for `long_gap` (1) or the gap is still read from the
+tracking alone (0). The tuning games have no video, so every value is fixed in advance, not
+searched. The default is off, which leaves the frozen submission unchanged.
+
+Three variants were fixed before any of them was scored, and are checked on the public window
+against the frozen file (spellF1 0.519), following the freeze rule:
+
+| variant | settings |
+|---|---|
+| vb | `VIDEO_BALL=1` |
+| vb_team | `VIDEO_BALL=1 VIDEO_BALL_BREAKS_GAPS=0` (team evidence only) |
+| vb_half | `VIDEO_BALL=1 VIDEO_BALL_WEIGHT=0.5` |
+
+### Result: adopted
+
+Detections ran once on all 64,641 graded frames without a tracked ball; 27,283 of them were filled
+after the selection and the jump check. Public window (sanity check, never tuned on), against the
+frozen file:
+
+| | spellF1 | macroF1 | possessions (true 17) | transF1 | full match: D share | full match: possessions |
+|---|---|---|---|---|---|---|
+| frozen (section 10) | 0.519 | 0.835 | 10 | 0.364 | 49.0% | 182 |
+| **vb** | **0.533** | 0.824 | 10 | 0.235 | 39.2% | 203 |
+| vb_team | 0.519 | 0.835 | 10 | 0.364 | 49.0% | 182 |
+| vb_half | 0.500 | 0.821 | 11 | 0.286 | 39.2% | 201 |
+
+`vb` beats the frozen file on spellF1, so by the freeze rule it becomes the submission
+(`VIDEO_BALL = 1`, file sha256 `3b610b63...`). What the numbers do and do not say:
+
+- The gain is small and inside the window's noise. It comes from one more possession matched at
+  IoU 0.7 (spellF1 at 0.7: 0.296 → 0.370), not from more matched possessions (8 of 17 in both).
+- On the full match it moves in the expected direction. The `D` share falls from 49% to 39%,
+  near the usual share of dead time in a match, and the number of possessions rises (BAR-ATH had
+  too few: 10 predicted against 17 true in the window). That fits the probe: by the players' pace,
+  most ball gaps are live play the old model called dead.
+- It has costs. In the window, true `D` frames called `A` rise from 77 to 181 (`D` recall
+  0.879 → 0.808), and transition timing gets worse (transF1 at ±25 frames 0.364 → 0.235). The
+  likely cause is a ball the video sees on the pitch during a set piece: the filled frames end the
+  ball gap, and with it the long-gap dead-ball evidence. macroF1, the tie-break, falls by 0.011.
+- `vb_team` changes nothing in the window. The effect comes from breaking long gaps, not from the
+  team evidence on the filled frames.
+- Three variants were scored and the best one taken. They were fixed in advance and are all
+  reported here, but picking the best of three on 17 possessions is a mild selection effect.
+
+Not tried yet: ending a ball gap only where the players are also running, which would keep a
+stoppage with a visible ball dead.

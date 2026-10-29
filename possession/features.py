@@ -218,7 +218,7 @@ def touch_evidence(ball, d_home, d_away):
     return np.clip(spread, -1.0, 1.0)
 
 
-def dead_evidence(ball, players, pitch):
+def dead_evidence(ball, players, pitch, gap_ball=None):
     """Per-frame log-odds that the ball is dead (positive) rather than alive (negative).
 
     Three signals are used, and each covers another's blind spot:
@@ -231,7 +231,8 @@ def dead_evidence(ball, players, pitch):
         because the trackers and the matches differ (BAR-ATH runs about 10% faster than the sample
         games in play and in stoppages). The score is linear in that ratio: below
         DEAD_SPEED_RATIO counts toward dead, above it toward alive.
-      - **The ball has been missing for a long time.** See long_gap.
+      - **The ball has been missing for a long time.** See long_gap. gap_ball, if given, is the
+        ball track whose gaps count (the tracking alone, when ball also has video fills).
     """
     length, width = float(pitch[0]), float(pitch[1])
     margin = config.OUT_MARGIN
@@ -255,7 +256,8 @@ def dead_evidence(ball, players, pitch):
     slow = np.where(np.isnan(slow), config.DEAD_NO_PLAYERS, slow)
     return np.clip(slow, -config.DEAD_SPEED_CLIP, config.DEAD_SPEED_CLIP) \
         + np.where(out, config.DEAD_OUT_SCORE, 0.0) \
-        + np.where(long_gap(ball, config.DEAD_GAP_MIN), config.DEAD_GAP_SCORE, 0.0)
+        + np.where(long_gap(ball if gap_ball is None else gap_ball, config.DEAD_GAP_MIN),
+                   config.DEAD_GAP_SCORE, 0.0)
 
 
 def long_gap(ball, min_length):

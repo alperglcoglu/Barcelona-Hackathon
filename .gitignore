@@ -54,6 +54,13 @@ data/*
 # insurance against it being recreated in here by habit.
 organizers/
 
+# -- model weights and local notes ------------------------------------------------------------
+# Detector weights are downloaded, not committed. CLAUDE.md and the hand-over notes are private
+# working notes and stay out of this public repository.
+*.pt
+CLAUDE.md
+devir-notu*.md
+
 # -- editors and build artifacts ---------------------------------------------------------------
 .idea/
 .vscode/

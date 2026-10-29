@@ -1,0 +1,9 @@
+# Only for possession/probe_video_ball.py (part B), which runs a ball detector on the tactical video.
+# The pipeline and the submitted file do not need these.
+-r requirements.txt
+opencv-python>=4.8,<5
+ultralytics>=8.1,<9
+# ultralytics pulls in torch. On Windows that is usually the CPU-only build, which is slow. With an
+# NVIDIA GPU, replace it with the CUDA build:
+#   pip uninstall -y torch torchvision
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
