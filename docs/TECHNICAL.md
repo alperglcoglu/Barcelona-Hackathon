@@ -807,7 +807,11 @@ frozen file:
 | vb_half | 0.500 | 0.821 | 11 | 0.286 | 39.2% | 201 |
 
 `vb` beats the frozen file on spellF1, so by the freeze rule it becomes the submission
-(`VIDEO_BALL = 1`, file sha256 `3b610b63...`). What the numbers do and do not say:
+(`VIDEO_BALL = 1`). Reference run (RTX 4070 laptop GPU, torch 2.6.0+cu124, ultralytics 8.4):
+the pipeline prints `detections sha256 504c66529e6d` for the detector cache and writes the file
+with sha256 `3b610b635edd4ba52e93130be98b25cfc566274d806d59dbfebb242347415b1b`. A rerun whose
+detection hash differs comes from a different detector output, not from the pipeline. What the
+numbers do and do not say:
 
 - The gain is small and inside the window's noise. It comes from one more possession matched at
   IoU 0.7 (spellF1 at 0.7: 0.296 → 0.370), not from more matched possessions (8 of 17 in both).
