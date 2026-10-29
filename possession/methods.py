@@ -86,6 +86,9 @@ def frame_scores(data, events=None):
         team = np.where(data["video_filled"], config.VIDEO_BALL_WEIGHT * team, team)
     if config.WIDTH_WEIGHT > 0:
         team = team + config.WIDTH_WEIGHT * features.width_evidence(data["players"], data["team"])
+    if config.PITCH_CONTROL_WEIGHT > 0:
+        team = team + config.PITCH_CONTROL_WEIGHT * features.pitch_control_evidence(
+            ball, data["players"], data["team"])
     team = config.TEAM_WEIGHT * team
     if events:
         team = team + tagging_prior.team_prior(events, len(team))

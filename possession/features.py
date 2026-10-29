@@ -19,12 +19,15 @@ ball stays with the team that last had it (CHALLENGE.md, "Ball in play").
 All distances are in metres, speeds in m/s and times in frames at 25 fps.
 """
 
+import warnings
+
 import numpy as np
 
 from . import config
 
 FPS = 25
 TYPICAL_MIN_PLAYERS = 15   # frames with this many players tracked define the typical pace
+BALL_VELOCITY_SPAN = 2     # frames each side for ball and player velocities in pitch control
 
 
 def interpolate_ball(ball, max_gap=None):
@@ -110,6 +113,50 @@ def team_evidence(ball, players, team):
     if config.TOUCH_WEIGHT > 0:
         evidence = evidence + config.TOUCH_WEIGHT * touch_evidence(ball, d_home, d_away)
     return np.where(np.isnan(ball[:, 0]), 0.0, evidence)
+
+
+def pitch_control_evidence(ball, players, team, chunk=20000):
+    """Per-frame evidence in [-1, 1] of which team reaches the ball first: + home, - away.
+
+    The nearest player says who stands next to the ball now. Pitch control (Spearman, "Beyond
+    Expected Goals", 2018, in its simple form) asks who gets there first, which is what decides a
+    loose ball, an interception or a 50-50, often a second before anyone is nearest:
+
+      - the ball is projected PC_LOOKAHEAD seconds ahead along its own velocity;
+      - each player keeps running with their current velocity for PC_REACTION seconds, then runs
+        straight at that point at PC_MAX_SPEED: arrival time T = reaction + distance / max speed;
+      - with each team's earliest arrival, P(home first) = 1 / (1 + exp(-pi / (sqrt 3 PC_SIGMA)
+        (T_away - T_home))), and the evidence is 2P - 1.
+
+    0 where the ball or either team is missing. Computed in chunks of frames to bound memory.
+    """
+    n = len(ball)
+    out = np.zeros(n)
+    k = BALL_VELOCITY_SPAN
+    ball_smooth = np.stack([nan_moving_mean(ball[:, i], config.BALL_SPEED_SMOOTH) for i in (0, 1)], 1)
+    ball_v = np.zeros_like(ball)
+    ball_v[k:n - k] = (ball_smooth[2 * k:] - ball_smooth[:-2 * k]) / (2 * k / FPS)
+    ball_v = np.nan_to_num(ball_v)
+    target = ball + config.PC_LOOKAHEAD * ball_v
+    home = team == 0
+    scale = np.pi / (np.sqrt(3.0) * config.PC_SIGMA)
+    for a in range(0, n, chunk):
+        b = min(a + chunk, n)
+        lo, hi = max(a - k, 0), min(b + k, n)
+        xy = players[lo:hi, :, :2]
+        v = np.zeros_like(xy)
+        if hi - lo > 2 * k:
+            v[k:-k] = (xy[2 * k:] - xy[:-2 * k]) / (2 * k / FPS)
+        v = np.nan_to_num(v)[a - lo:a - lo + (b - a)]
+        start = xy[a - lo:a - lo + (b - a)] + config.PC_REACTION * v
+        dist = np.hypot(target[a:b, None, 0] - start[:, :, 0], target[a:b, None, 1] - start[:, :, 1])
+        arrival = config.PC_REACTION + dist / config.PC_MAX_SPEED
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            t_home = np.nanmin(arrival[:, home], axis=1)
+            t_away = np.nanmin(arrival[:, ~home], axis=1)
+            out[a:b] = np.tanh(0.5 * scale * (t_away - t_home))
+    return np.nan_to_num(np.where(np.isnan(ball[:, 0]), 0.0, out))
 
 
 def handover_cue(ball, players, team):

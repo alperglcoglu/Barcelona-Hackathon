@@ -870,3 +870,41 @@ The change does what it was meant to do, only too little to move a possession:
   frames go from 62,234 to 65,614, against 77,858 before the video ball.
 
 The code stays, for ablation with `--set VIDEO_BALL_GAP_PACE=1`.
+
+## 15. Pitch control: who reaches the ball first
+
+### Why
+
+`python -m possession.diagnose_misses` sorts the true possessions the submitted file does not
+match at IoU 0.5 in the public window (9 of 17) by cause:
+
+| cause | possessions |
+|---|---|
+| absorbed by the other team | 6 |
+| merged with the same team across a spell of the other team | 2 |
+| boundary too far off | 1 |
+| merged across a dead ball, or called dead | 0 |
+
+Eight of the nine are team errors: short possessions of one team inside a long one of the other,
+which the output never shows (3 of the 4 under 5 s are missed). Earlier findings point the same
+way (section 10): on such interruptions the nearest-player evidence keeps pointing at the old team.
+Nearest-player evidence says who stands next to the ball now. A turnover is decided by who gets to
+the ball first, often a second before anyone is nearest.
+
+### How
+
+`features.pitch_control_evidence` uses the simple form of Spearman's model ("Beyond Expected
+Goals", 2018):
+- the ball is projected `PC_LOOKAHEAD` = 0.5 s ahead along its own velocity;
+- every player keeps their current velocity for `PC_REACTION` = 0.7 s, then runs straight at that
+  point at `PC_MAX_SPEED` = 5 m/s;
+- with each team's earliest arrival, P(home first) = 1 / (1 + exp(-π / (√3 · `PC_SIGMA`)
+  (T_away − T_home))), `PC_SIGMA` = 0.45 s, and the evidence is 2P − 1.
+
+The physical constants are Spearman's and fixed. The evidence is added to the team evidence with
+`PITCH_CONTROL_WEIGHT`, which is chosen on the 13 tuning games (never on BAR-ATH). Only after that
+is the result checked on the public window against the submitted file (spellF1 0.533).
+
+### Result
+
+Pending.
