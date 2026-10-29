@@ -95,6 +95,9 @@ def frame_scores(data, events=None):
     dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"],
                                                        gap_ball)
     cue = features.handover_cue(ball, data["players"], data["team"])
+    if config.PC_CUE_WEIGHT > 0:
+        cue = np.maximum(cue, config.PC_CUE_WEIGHT * features.pitch_control_cue(
+            ball, data["players"], data["team"]))
     if events:
         cue = np.maximum(cue, tagging_prior.transition_cue(events, len(cue)))
     return np.column_stack([team / 2.0, -team / 2.0, dead, cue])
