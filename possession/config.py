@@ -159,3 +159,7 @@ VIDEO_BALL_WEIGHT = 1.0
 # [fixed] 1: a filled frame ends a ball gap for features.long_gap, so a gap in which the video
 # sees the ball no longer reads as a stoppage; 0: long_gap reads the tracking ball only.
 VIDEO_BALL_BREAKS_GAPS = 1
+# [fixed] 1: a filled frame ends a ball gap only where the players run faster than
+# DEAD_SPEED_RATIO of the match's pace, so a set piece with the ball in view still reads as a
+# stoppage. Needs VIDEO_BALL_BREAKS_GAPS = 1. Section 14.
+VIDEO_BALL_GAP_PACE = 0

@@ -831,3 +831,42 @@ numbers do and do not say:
 
 Not tried yet: ending a ball gap only where the players are also running, which would keep a
 stoppage with a visible ball dead.
+
+## 14. Ending a ball gap only while the players run
+
+Section 13 left a cost: with the video ball, true dead frames called `A` in the public window rose
+from 77 to 181, and transition timing got worse. The likely cause is a set piece. The ball sits
+on the pitch in view of the camera, the video fills the gap, and the long-gap dead-ball evidence
+(`features.long_gap`) is gone, although play is stopped.
+
+`VIDEO_BALL_GAP_PACE = 1` lets a filled frame end a ball gap only where the players run: their
+mean pace, averaged over ±1 s and divided by the match's typical pace (`features.pace_ratio`, the
+quantity the dead-ball evidence already uses), is above `DEAD_SPEED_RATIO`. Where they walk, the
+gap still counts as a stoppage. The filled ball keeps feeding the team evidence on every filled
+frame. The threshold is the existing one, so nothing new is chosen. `features.pace_ratio` was
+split out of `dead_evidence` unchanged, and its output is identical.
+
+One variant, fixed before scoring, checked against the current submission (spellF1 0.533):
+
+| variant | settings |
+|---|---|
+| vb_pace | `VIDEO_BALL_GAP_PACE=1` (everything else as submitted) |
+
+### Result: not adopted
+
+| | spellF1 | macroF1 | true `D` called `A` | transF1 | full match: `D` | full match: possessions |
+|---|---|---|---|---|---|---|
+| submitted (vb, section 13) | 0.533 | **0.824** | 181 | 0.235 | 62,234 | 203 |
+| vb_pace | 0.533 | 0.824 | 171 | **0.294** | 65,614 | 193 |
+
+The ranking metric is tied. The spell scores agree at every IoU threshold, with the same 8 of 17
+possessions matched. The tie-break, macroF1, is lower by 0.0005 (0.8239 against 0.8244). The
+freeze rule takes a change only if it wins, so the switch stays off (`VIDEO_BALL_GAP_PACE = 0`).
+
+The change does what it was meant to do, only too little to move a possession:
+- 10 fewer true `D` frames are called `A` in the window.
+- One more transition is matched within ±25 frames (transF1 0.235 → 0.294).
+- On the full match it gives back about a fifth of the dead time the video ball removed: `D`
+  frames go from 62,234 to 65,614, against 77,858 before the video ball.
+
+The code stays, for ablation with `--set VIDEO_BALL_GAP_PACE=1`.

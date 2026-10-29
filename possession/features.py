@@ -218,6 +218,26 @@ def touch_evidence(ball, d_home, d_away):
     return np.clip(spread, -1.0, 1.0)
 
 
+def pace_ratio(players):
+    """Players' mean speed, averaged over +/- SPEED_SMOOTH frames, over the match's typical pace.
+
+    Below DEAD_SPEED_RATIO the players have slowed down as in a stoppage (dead_evidence). NaN
+    where no player is tracked.
+    """
+    speeds = players[:, :, 2]
+    seen = ~np.isnan(speeds)
+    n_seen = seen.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean_speed = np.where(n_seen > 0, np.where(seen, speeds, 0.0).sum(axis=1) / n_seen, np.nan)
+    mean_speed = nan_moving_mean(mean_speed, config.SPEED_SMOOTH)
+    # Relative to this match's own typical pace, so the pivot transfers between matches and
+    # trackers. The median needs no labels: it is taken over the frames where most players are
+    # tracked, which leaves out the warm-up and half-time when players are off the pitch.
+    crowded = (n_seen >= TYPICAL_MIN_PLAYERS) & np.isfinite(mean_speed)
+    typical = np.median(mean_speed[crowded]) if crowded.any() else np.nan
+    return mean_speed / typical
+
+
 def dead_evidence(ball, players, pitch, gap_ball=None):
     """Per-frame log-odds that the ball is dead (positive) rather than alive (negative).
 
@@ -240,18 +260,7 @@ def dead_evidence(ball, players, pitch, gap_ball=None):
     with np.errstate(invalid="ignore"):
         out = (x < -margin) | (x > length + margin) | (y < -margin) | (y > width + margin)
 
-    speeds = players[:, :, 2]
-    seen = ~np.isnan(speeds)
-    n_seen = seen.sum(axis=1)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mean_speed = np.where(n_seen > 0, np.where(seen, speeds, 0.0).sum(axis=1) / n_seen, np.nan)
-    mean_speed = nan_moving_mean(mean_speed, config.SPEED_SMOOTH)
-    # Relative to this match's own typical pace, so the pivot transfers between matches and
-    # trackers. The median needs no labels: it is taken over the frames where most players are
-    # tracked, which leaves out the warm-up and half-time when players are off the pitch.
-    crowded = (n_seen >= TYPICAL_MIN_PLAYERS) & np.isfinite(mean_speed)
-    typical = np.median(mean_speed[crowded]) if crowded.any() else np.nan
-    slow = config.DEAD_SPEED_WEIGHT * (config.DEAD_SPEED_RATIO - mean_speed / typical)
+    slow = config.DEAD_SPEED_WEIGHT * (config.DEAD_SPEED_RATIO - pace_ratio(players))
     # No players tracked at all (camera off the pitch): no speed signal, treat as neutral-dead.
     slow = np.where(np.isnan(slow), config.DEAD_NO_PLAYERS, slow)
     return np.clip(slow, -config.DEAD_SPEED_CLIP, config.DEAD_SPEED_CLIP) \

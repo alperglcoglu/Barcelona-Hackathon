@@ -88,23 +88,6 @@ def gap_length_bins(missing, bins=GAP_BINS):
     return out
 
 
-def pace_ratio(players):
-    """Players' mean speed, averaged over +/- 1 s, divided by the match's median pace.
-
-    The same quantity features.dead_evidence compares with DEAD_SPEED_RATIO: above the pivot the
-    players are running, which is live play far more often than not.
-    """
-    speeds = players[:, :, 2]
-    seen = ~np.isnan(speeds)
-    n_seen = seen.sum(axis=1)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mean_speed = np.where(n_seen > 0, np.where(seen, speeds, 0.0).sum(axis=1) / n_seen, np.nan)
-    mean_speed = features.nan_moving_mean(mean_speed, config.SPEED_SMOOTH)
-    crowded = (n_seen >= features.TYPICAL_MIN_PLAYERS) & np.isfinite(mean_speed)
-    typical = np.median(mean_speed[crowded]) if crowded.any() else np.nan
-    return mean_speed / typical
-
-
 def sample_frames(mask, n, seed=0):
     """Up to n frame indices drawn without replacement where mask is True, sorted."""
     candidates = np.flatnonzero(mask)
@@ -242,7 +225,7 @@ def main(argv=None):
     bins = gap_length_bins(missing)
 
     with np.errstate(invalid="ignore"):
-        running = pace_ratio(data["players"]) > config.DEAD_SPEED_RATIO
+        running = features.pace_ratio(data["players"]) > config.DEAD_SPEED_RATIO
     labels = live_labels = None
     if args.labels:
         labels = submission.read(args.labels)
