@@ -1,6 +1,7 @@
 # Technical document
 
-Frame-level ball possession for More than a Hack 2027 (FC Barcelona vs Athletic Club). The
+Team **La Messia**. Frame-level ball possession for More than a Hack 2027 (FC Barcelona vs
+Athletic Club). The
 section headings follow what SUBMISSION.md asks the document to cover.
 
 ## 1. Approach

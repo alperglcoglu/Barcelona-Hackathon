@@ -21,9 +21,9 @@ CACHE_DIR = os.path.join(ROOT, "data", "cache")
 # organisers' baselines, so nothing we write there is committed by accident.
 RESULTS_DIR = os.path.join(ROOT, "evaluation", "results")
 
-# The team name the submission form asks the file to be named after (SUBMISSION.md). Change it
-# once the team is registered.
-TEAM_NAME = "team"
+# The team name the submission form asks the file to be named after (SUBMISSION.md). The team is
+# registered as "La Messia"; the underscore keeps the file name free of spaces.
+TEAM_NAME = "La_Messia"
 
 # -- baseline (the organisers' reference, reproduced for a parity check) ----------------------
 # Half-width of the majority-vote window, in frames. 50 is the published floor, baseline_smooth50,

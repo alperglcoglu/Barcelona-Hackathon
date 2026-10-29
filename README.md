@@ -1,8 +1,8 @@
 # Barcelona Hackathon: frame-level ball possession
 
-Our entry to **More than a Hack 2027, Phase 1** (Metrica Sports, FC Barcelona and the Mobile World
-Capital Barcelona). For each of the 199,319 frames of the tactical video of FC Barcelona vs
-Athletic Club, the pipeline outputs `H` (home in possession), `A` (away in possession), `D` (dead
+Team **La Messia**'s entry to **More than a Hack 2027, Phase 1** (Metrica Sports, FC Barcelona and
+the Mobile World Capital Barcelona). For each of the 199,319 frames of the tactical video of FC
+Barcelona vs Athletic Club, the pipeline outputs `H` (home in possession), `A` (away in possession), `D` (dead
 ball) or `X` (no answer). Entries are ranked on `spellF1`, with `macroF1` as the tie-break.
 
 - How the method works and why: [docs/TECHNICAL.md](docs/TECHNICAL.md)
