@@ -973,3 +973,25 @@ the public window. That is one variant, fixed here before scoring: `PC_CUE_WEIGH
 ### Result on the public window
 
 Pending.
+
+## 17. Boundary timing: a constant shift of the labels
+
+In the public window the submitted file's changes of label come on average 10.8 frames (0.43 s)
+before the true ones (`lat_f` −10.8). spellF1 at IoU 0.6–0.7 is sensitive to that. A shift
+cannot be chosen on the public window, but a constant lead that also shows on the tuning games
+could be corrected there. `methods.shift_changes` moves every change by `LABEL_SHIFT` frames after
+decoding. `tuning.segmentation` now reports the median signed offset of each predicted change from
+the nearest true one within 2 s.
+
+13 tuning games, everything else as in `config.py`:
+
+| `LABEL_SHIFT` (frames) | −12 | −6 | **0** | 6 | 12 | 18 | 25 |
+|---|---|---|---|---|---|---|---|
+| spellF1 | 0.422 | 0.426 | **0.428** | 0.426 | 0.420 | 0.413 | 0.403 |
+| median offset (s) | −0.08 | +0.07 | +0.21 | +0.35 | +0.50 | +0.64 | +0.77 |
+
+On the tuning games the changes come slightly late, not early, and every fold of leave-one-game-out
+picks 0. The lead seen in BAR-ATH's window does not show on the tuning games. It may come from the
+ground truth's definition (corrected tracking against event-derived labels), or from 20
+transitions being too few to estimate it. Either way it cannot be corrected without fitting the
+public window, so `LABEL_SHIFT` stays 0. The function and the latency column stay as diagnostics.
