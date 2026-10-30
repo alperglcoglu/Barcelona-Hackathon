@@ -73,6 +73,11 @@ PC_REACTION = 0.7          # [fixed] s before a player changes direction (Spearm
 PC_MAX_SPEED = 5.0         # [fixed] m/s, the same source
 PC_SIGMA = 0.45            # [fixed] s, spread of arrival times, the same source
 PC_LOOKAHEAD = 0.5         # [fixed] s the ball is projected ahead along its velocity
+# Pitch control as a hand-over cue instead (features.pitch_control_cue, section 16): it lowers the
+# switch cost where a team is clearly first to a ball it can reach soon. 0 = off.
+PC_CUE_WEIGHT = 0.0
+PC_CUE_THRESHOLD = 0.8     # control (2P - 1) above which a team counts as clearly first
+PC_CUE_REACH = 1.0         # s: that team's earliest arrival must be within this
 
 # Dead ball: a pivot on the players' mean speed, divided by the match's median pace (about 1.6 m/s
 # in the sample games). Above the pivot counts toward alive, below it toward dead. In the sample

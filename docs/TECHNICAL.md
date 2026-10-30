@@ -937,3 +937,39 @@ with it: the protocol checks the public window only after a gain on the tuning g
 stays for later use. Pitch control may still help as a hand-over cue (lowering the switch cost
 where the new team clearly gets to the ball first) rather than as evidence on every frame. That
 variant was not tried.
+
+## 16. Pitch control as a hand-over cue
+
+Section 15 showed that pitch control used as evidence on every frame swings between the teams while
+the ball is in flight. Here it only lowers the switch cost, through the hand-over cue of section 10
+(`features.pitch_control_cue`). A team gets a cue where its control (2P − 1) is above
+`PC_CUE_THRESHOLD` and its earliest arrival is within `PC_CUE_REACH` seconds: an interception or
+a won loose ball, not a long pass. The cue joins the existing one by maximum, with weight
+`PC_CUE_WEIGHT`.
+
+Grid on the 13 tuning games (`python -m tuning.sweep_grid --games all ...`), mean spellF1. The
+other parameters are as in `config.py`, so the first row reproduces it:
+
+| `PC_CUE_WEIGHT` | threshold | reach (s) | `SWITCH_COST` | `SWITCH_RELIEF` | spellF1 | short spells missed (of 831) | spurious changes |
+|---|---|---|---|---|---|---|---|
+| 0 | – | – | 6 | 0.4 | 0.4281 | 544 | 1532 |
+| 0 | – | – | 8 | 0.6 | 0.4289 | 543 | 1532 |
+| 1 | 0.5 | 1 | 6 | 0.4 | 0.4280 | 537 | 1567 |
+| 1 | 0.8 | 1 | 6 | 0.4 | 0.4290 | 536 | 1554 |
+| **1** | **0.8** | **1** | **8** | **0.6** | **0.4319** | 532 | 1566 |
+| 1 | 0.8 | 2 | 8 | 0.6 | 0.4317 | 532 | 1577 |
+
+32 combinations were tried: weight 0 or 1, threshold 0.5 or 0.8, reach 1 or 2 s, switch cost 6 or 8,
+relief 0.4 or 0.6. The best combination is the same in every leave-one-game-out fold, so the
+held-out mean is also 0.4319, against 0.4281 for the current configuration. 10 of the 13 games
+improve, game2 loses 0.012, and two are flat. The gain is small: the cue recovers a few short
+interruptions (544 → 532 missed), and the higher switch cost keeps the extra spurious changes
+down. Re-tuning the decode costs alone (weight 0) gives only 0.4289.
+
+Because it beats the current configuration on the tuning games, this single combination goes to
+the public window. That is one variant, fixed here before scoring: `PC_CUE_WEIGHT=1`,
+`SWITCH_COST=8`, `SWITCH_RELIEF=0.6` (threshold 0.8 and reach 1 s are the defaults).
+
+### Result on the public window
+
+Pending.
