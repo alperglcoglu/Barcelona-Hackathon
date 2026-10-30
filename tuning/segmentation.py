@@ -141,7 +141,7 @@ def summary(result):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--games", choices=("metrica", "all"), default="metrica")
-    parser.add_argument("--sweep", help="NAME=v1,v2,... one decode parameter to vary")
+    parser.add_argument("--sweep", help="NAME=v1,v2,... one parameter to vary (decode or evidence)")
     args = parser.parse_args()
 
     cases = search.degraded_set(search.load_games(args.games))
@@ -161,9 +161,12 @@ def main():
         key, values = args.sweep.split("=")
         print("\nsweep {} (spellF1 is the mean over games, the counts are totals)".format(key))
         print(HEADER.replace("game       ", "{:<11}".format(key)))
+        evidence = key not in search.DECODE_SPACE
         for value in values.split(","):
-            res = evaluate(scores, cases, {key: float(value)})
-            print(row(value, summary(res)))
+            params = {key: float(value)}
+            res = evaluate(search.raw_scores("state_model", params, cases) if evidence else scores,
+                           cases, params)
+            print(row(value, summary(res)), flush=True)
 
 
 if __name__ == "__main__":

@@ -66,6 +66,14 @@ WIDTH_SCALE = 1.5          # [tuned] metres of width difference that count as cl
 WIDTH_SMOOTH = 25          # [fixed] +/- 1 s
 WIDTH_MIN_PLAYERS = 5      # [fixed] fewer tracked players than this: no width evidence
 
+# -- pitch control (features.pitch_control_evidence, docs/TECHNICAL.md section 15) --------------
+# Which team reaches the ball first, added to the team evidence with this weight. 0 = off.
+PITCH_CONTROL_WEIGHT = 0.0
+PC_REACTION = 0.7          # [fixed] s before a player changes direction (Spearman 2018)
+PC_MAX_SPEED = 5.0         # [fixed] m/s, the same source
+PC_SIGMA = 0.45            # [fixed] s, spread of arrival times, the same source
+PC_LOOKAHEAD = 0.5         # [fixed] s the ball is projected ahead along its velocity
+
 # Dead ball: a pivot on the players' mean speed, divided by the match's median pace (about 1.6 m/s
 # in the sample games). Above the pivot counts toward alive, below it toward dead. In the sample
 # games the ratio is about 1.25 in play and about 0.65 in stoppages.
