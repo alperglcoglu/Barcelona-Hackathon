@@ -27,8 +27,8 @@ pip install -r requirements-cv.txt gdown
 gdown -O football-ball-detection.pt "https://drive.google.com/uc?id=1isw4wx-MK9h9LMr36VvIWlJD6ppUvw7V"
 python -m possession.video_ball --weights football-ball-detection.pt
 
-python -m possession.pipeline                          # writes evaluation/results/<team>.csv
-python evaluation/validate_submission.py evaluation/results/<team>.csv
+python -m possession.pipeline                          # writes evaluation/results/La_Messia.csv
+python evaluation/validate_submission.py evaluation/results/La_Messia.csv
 python evaluation/run_evaluation.py                    # score on the public 5-minute window
 ```
 

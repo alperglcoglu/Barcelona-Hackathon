@@ -271,8 +271,8 @@ See [README.md](../README.md#reproduce-the-submission). In short:
 
 ```bash
 pip install -r requirements-dev.txt
-python -m possession.pipeline             # writes evaluation/results/<team>.csv
-python evaluation/validate_submission.py evaluation/results/<team>.csv
+python -m possession.pipeline             # writes evaluation/results/La_Messia.csv
+python evaluation/validate_submission.py evaluation/results/La_Messia.csv
 
 # optional: redo the tuning and training on the public sample games
 bash tuning/fetch_sample_data.sh

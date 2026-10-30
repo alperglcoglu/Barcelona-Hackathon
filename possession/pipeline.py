@@ -49,7 +49,7 @@ def check_baseline(data):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--method", default=DEFAULT_METHOD, choices=sorted(methods.METHODS))
-    parser.add_argument("--out", help="output CSV (default: evaluation/results/<team>.csv)")
+    parser.add_argument("--out", help="output CSV (default: evaluation/results/La_Messia.csv)")
     parser.add_argument("--data-dir", help="data bundle location (default: ./data or MTAH_DATA_DIR)")
     parser.add_argument("--no-cache", action="store_true", help="re-parse the tracking")
     parser.add_argument("--no-tagging", action="store_true",
