@@ -94,15 +94,19 @@ def breakdown(gt, pred):
     true_changes = changes(gt, graded)
     pred_changes = changes(filled, graded)
     if len(true_changes):
-        near = np.abs(pred_changes[:, None] - true_changes[None, :]).min(axis=1) <= tol
+        offset = pred_changes[:, None] - true_changes[None, :]
+        nearest = offset[np.arange(len(pred_changes)), np.abs(offset).argmin(axis=1)]
+        near = np.abs(nearest) <= tol
+        latency = float(np.median(nearest[near]) / FPS) if near.any() else np.nan
     else:
         near = np.zeros(len(pred_changes), dtype=bool)
+        latency = np.nan
     return {
         "spellF1": metrics.spell_f1(gt, pred)[0],
         "true": len(truth), "pred": len(guess), "missed": missed,
         "interrupts": interrupts, "interrupt_missed": int(interrupts_missed),
         "pauses": pauses, "pause_skipped": int(pauses_skipped),
-        "pred_changes": len(pred_changes), "spurious": int((~near).sum()),
+        "pred_changes": len(pred_changes), "spurious": int((~near).sum()), "latency": latency,
         "start": float(np.median(starts)) if starts else np.nan,
         "end": float(np.median(ends)) if ends else np.nan,
     }
@@ -134,7 +138,8 @@ def evaluate(scores, cases, params):
 
 def summary(result):
     keys = result[next(iter(result))].keys()
-    return {k: float(np.nanmean([r[k] for r in result.values()])) if k in ("spellF1", "start", "end")
+    return {k: float(np.nanmean([r[k] for r in result.values()]))
+            if k in ("spellF1", "start", "end", "latency")
             else float(np.sum([r[k] for r in result.values()])) for k in keys}
 
 

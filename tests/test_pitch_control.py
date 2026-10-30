@@ -46,3 +46,15 @@ def test_no_ball_or_no_team_gives_no_evidence():
     p[12:, 1, :] = np.nan                                     # the away team is gone
     e = features.pitch_control_evidence(b, p, TEAM)
     assert (e[5:10] == 0).all() and (e[12:] == 0).all()
+
+
+def test_cue_marks_a_team_that_is_clearly_first_to_a_ball_it_can_reach():
+    from possession import config, features
+    n = 50
+    ball = np.tile([50.0, 30.0], (n, 1))
+    b, p = _scene(n, ball, (51.0, 30.0), (60.0, 30.0))        # home 1 m away, away 10 m
+    cue = features.pitch_control_cue(b, p, TEAM)
+    assert (cue[5:-5, 0] > 0.5).all() and (cue[:, 1] == 0).all()
+    b, p = _scene(n, ball, (70.0, 30.0), (80.0, 30.0))        # home first, but 20 m away
+    assert (features.pitch_control_cue(b, p, TEAM) == 0).all()
+    assert config.PC_CUE_WEIGHT == 0.0                         # off unless switched on

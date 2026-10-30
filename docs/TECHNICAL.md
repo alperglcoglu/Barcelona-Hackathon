@@ -937,3 +937,61 @@ with it: the protocol checks the public window only after a gain on the tuning g
 stays for later use. Pitch control may still help as a hand-over cue (lowering the switch cost
 where the new team clearly gets to the ball first) rather than as evidence on every frame. That
 variant was not tried.
+
+## 16. Pitch control as a hand-over cue
+
+Section 15 showed that pitch control used as evidence on every frame swings between the teams while
+the ball is in flight. Here it only lowers the switch cost, through the hand-over cue of section 10
+(`features.pitch_control_cue`). A team gets a cue where its control (2P − 1) is above
+`PC_CUE_THRESHOLD` and its earliest arrival is within `PC_CUE_REACH` seconds: an interception or
+a won loose ball, not a long pass. The cue joins the existing one by maximum, with weight
+`PC_CUE_WEIGHT`.
+
+Grid on the 13 tuning games (`python -m tuning.sweep_grid --games all ...`), mean spellF1. The
+other parameters are as in `config.py`, so the first row reproduces it:
+
+| `PC_CUE_WEIGHT` | threshold | reach (s) | `SWITCH_COST` | `SWITCH_RELIEF` | spellF1 | short spells missed (of 831) | spurious changes |
+|---|---|---|---|---|---|---|---|
+| 0 | – | – | 6 | 0.4 | 0.4281 | 544 | 1532 |
+| 0 | – | – | 8 | 0.6 | 0.4289 | 543 | 1532 |
+| 1 | 0.5 | 1 | 6 | 0.4 | 0.4280 | 537 | 1567 |
+| 1 | 0.8 | 1 | 6 | 0.4 | 0.4290 | 536 | 1554 |
+| **1** | **0.8** | **1** | **8** | **0.6** | **0.4319** | 532 | 1566 |
+| 1 | 0.8 | 2 | 8 | 0.6 | 0.4317 | 532 | 1577 |
+
+32 combinations were tried: weight 0 or 1, threshold 0.5 or 0.8, reach 1 or 2 s, switch cost 6 or 8,
+relief 0.4 or 0.6. The best combination is the same in every leave-one-game-out fold, so the
+held-out mean is also 0.4319, against 0.4281 for the current configuration. 10 of the 13 games
+improve, game2 loses 0.012, and two are flat. The gain is small: the cue recovers a few short
+interruptions (544 → 532 missed), and the higher switch cost keeps the extra spurious changes
+down. Re-tuning the decode costs alone (weight 0) gives only 0.4289.
+
+Because it beats the current configuration on the tuning games, this single combination goes to
+the public window. That is one variant, fixed here before scoring: `PC_CUE_WEIGHT=1`,
+`SWITCH_COST=8`, `SWITCH_RELIEF=0.6` (threshold 0.8 and reach 1 s are the defaults).
+
+### Result on the public window
+
+Pending.
+
+## 17. Boundary timing: a constant shift of the labels
+
+In the public window the submitted file's changes of label come on average 10.8 frames (0.43 s)
+before the true ones (`lat_f` −10.8). spellF1 at IoU 0.6–0.7 is sensitive to that. A shift
+cannot be chosen on the public window, but a constant lead that also shows on the tuning games
+could be corrected there. `methods.shift_changes` moves every change by `LABEL_SHIFT` frames after
+decoding. `tuning.segmentation` now reports the median signed offset of each predicted change from
+the nearest true one within 2 s.
+
+13 tuning games, everything else as in `config.py`:
+
+| `LABEL_SHIFT` (frames) | −12 | −6 | **0** | 6 | 12 | 18 | 25 |
+|---|---|---|---|---|---|---|---|
+| spellF1 | 0.422 | 0.426 | **0.428** | 0.426 | 0.420 | 0.413 | 0.403 |
+| median offset (s) | −0.08 | +0.07 | +0.21 | +0.35 | +0.50 | +0.64 | +0.77 |
+
+On the tuning games the changes come slightly late, not early, and every fold of leave-one-game-out
+picks 0. The lead seen in BAR-ATH's window does not show on the tuning games. It may come from the
+ground truth's definition (corrected tracking against event-derived labels), or from 20
+transitions being too few to estimate it. Either way it cannot be corrected without fitting the
+public window, so `LABEL_SHIFT` stays 0. The function and the latency column stay as diagnostics.

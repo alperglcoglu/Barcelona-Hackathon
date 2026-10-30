@@ -95,6 +95,9 @@ def frame_scores(data, events=None):
     dead = config.DEAD_WEIGHT * features.dead_evidence(ball, data["players"], data["pitch"],
                                                        gap_ball)
     cue = features.handover_cue(ball, data["players"], data["team"])
+    if config.PC_CUE_WEIGHT > 0:
+        cue = np.maximum(cue, config.PC_CUE_WEIGHT * features.pitch_control_cue(
+            ball, data["players"], data["team"]))
     if events:
         cue = np.maximum(cue, tagging_prior.transition_cue(events, len(cue)))
     return np.column_stack([team / 2.0, -team / 2.0, dead, cue])
@@ -106,7 +109,7 @@ def weigh(raw):
     return raw * weights[:raw.shape[1]]
 
 
-def decode(scores, halves):
+def decode(scores, halves, shift=True):
     """Viterbi over H / A / D in each half. scores is (n, 3), or (n, 5) with the hand-over cues,
     which then lower the H <-> A cost by SWITCH_RELIEF where they are high."""
     cost = hmm.transition_costs(config.SWITCH_COST, config.TO_DEAD_COST, config.FROM_DEAD_COST)
@@ -122,7 +125,25 @@ def decode(scores, halves):
         else:
             path = hmm.viterbi(scores[first:last + 1, :3], cost, switch_scale=part)
         labels[first:last + 1] = hmm.LETTERS[path]
+    if shift and config.LABEL_SHIFT:
+        labels = shift_changes(labels, halves, int(config.LABEL_SHIFT))
     return labels
+
+
+def shift_changes(labels, halves, frames):
+    """Labels moved later by frames (earlier if negative) inside each half; the ends are padded.
+
+    Every change of label moves by the same amount, so a systematic lead or lag of the output's
+    boundaries against the truth can be corrected (docs/TECHNICAL.md, section 17).
+    """
+    out = labels.copy()
+    for first, last in halves:
+        part = labels[first:last + 1]
+        if frames > 0:
+            out[first:last + 1] = np.concatenate([np.repeat(part[:1], frames), part[:-frames]])
+        elif frames < 0:
+            out[first:last + 1] = np.concatenate([part[-frames:], np.repeat(part[-1:], -frames)])
+    return out
 
 
 def _default_halves(halves):
@@ -251,7 +272,7 @@ def state_model_tv(data, events=None, halves=None, tv=None, variant="shift"):
     """
     halves = _default_halves(halves)
     scores = frame_scores(data, events)
-    labels = decode(scores, halves)
+    labels = decode(scores, halves, shift=False)
     if tv is None:
         return labels
     use_shift, use_bins = TV_VARIANTS[variant]

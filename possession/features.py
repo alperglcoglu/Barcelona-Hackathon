@@ -115,31 +115,22 @@ def team_evidence(ball, players, team):
     return np.where(np.isnan(ball[:, 0]), 0.0, evidence)
 
 
-def pitch_control_evidence(ball, players, team, chunk=20000):
-    """Per-frame evidence in [-1, 1] of which team reaches the ball first: + home, - away.
+def arrival_times(ball, players, team, chunk=20000):
+    """(t_home, t_away): each team's earliest arrival, in seconds, at the ball's projected point.
 
-    The nearest player says who stands next to the ball now. Pitch control (Spearman, "Beyond
-    Expected Goals", 2018, in its simple form) asks who gets there first, which is what decides a
-    loose ball, an interception or a 50-50, often a second before anyone is nearest:
-
-      - the ball is projected PC_LOOKAHEAD seconds ahead along its own velocity;
-      - each player keeps running with their current velocity for PC_REACTION seconds, then runs
-        straight at that point at PC_MAX_SPEED: arrival time T = reaction + distance / max speed;
-      - with each team's earliest arrival, P(home first) = 1 / (1 + exp(-pi / (sqrt 3 PC_SIGMA)
-        (T_away - T_home))), and the evidence is 2P - 1.
-
-    0 where the ball or either team is missing. Computed in chunks of frames to bound memory.
+    The simple form of Spearman's model ("Beyond Expected Goals", 2018): the ball is projected
+    PC_LOOKAHEAD seconds ahead along its own velocity; each player keeps running with their
+    current velocity for PC_REACTION seconds, then runs straight at that point at PC_MAX_SPEED.
+    NaN where the ball or the team is missing. Computed in chunks of frames to bound memory.
     """
     n = len(ball)
-    out = np.zeros(n)
+    t_home, t_away = np.full(n, np.nan), np.full(n, np.nan)
     k = BALL_VELOCITY_SPAN
     ball_smooth = np.stack([nan_moving_mean(ball[:, i], config.BALL_SPEED_SMOOTH) for i in (0, 1)], 1)
     ball_v = np.zeros_like(ball)
     ball_v[k:n - k] = (ball_smooth[2 * k:] - ball_smooth[:-2 * k]) / (2 * k / FPS)
-    ball_v = np.nan_to_num(ball_v)
-    target = ball + config.PC_LOOKAHEAD * ball_v
+    target = ball + config.PC_LOOKAHEAD * np.nan_to_num(ball_v)
     home = team == 0
-    scale = np.pi / (np.sqrt(3.0) * config.PC_SIGMA)
     for a in range(0, n, chunk):
         b = min(a + chunk, n)
         lo, hi = max(a - k, 0), min(b + k, n)
@@ -153,10 +144,45 @@ def pitch_control_evidence(ball, players, team, chunk=20000):
         arrival = config.PC_REACTION + dist / config.PC_MAX_SPEED
         with np.errstate(all="ignore"), warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            t_home = np.nanmin(arrival[:, home], axis=1)
-            t_away = np.nanmin(arrival[:, ~home], axis=1)
-            out[a:b] = np.tanh(0.5 * scale * (t_away - t_home))
-    return np.nan_to_num(np.where(np.isnan(ball[:, 0]), 0.0, out))
+            t_home[a:b] = np.nanmin(arrival[:, home], axis=1)
+            t_away[a:b] = np.nanmin(arrival[:, ~home], axis=1)
+    return t_home, t_away
+
+
+def _control(t_home, t_away):
+    """2 P(home first) - 1 from the two arrival times, with Spearman's spread PC_SIGMA."""
+    scale = np.pi / (np.sqrt(3.0) * config.PC_SIGMA)
+    return np.nan_to_num(np.tanh(0.5 * scale * (t_away - t_home)))
+
+
+def pitch_control_evidence(ball, players, team):
+    """Per-frame evidence in [-1, 1] of which team reaches the ball first: + home, - away.
+
+    The nearest player says who stands next to the ball now. Pitch control asks who gets there
+    first, which is what decides a loose ball, an interception or a 50-50, often a second before
+    anyone is nearest. 0 where the ball or either team is missing. See arrival_times.
+    """
+    t_home, t_away = arrival_times(ball, players, team)
+    return np.where(np.isnan(ball[:, 0]), 0.0, _control(t_home, t_away))
+
+
+def pitch_control_cue(ball, players, team):
+    """(n_frames, 2) hand-over cue in [0, 1] from pitch control: home (0) / away (1) gets there first.
+
+    Used as evidence on every frame, pitch control swings between the teams while the ball is in
+    flight (section 15). As a cue it only lowers the switch cost, and only where a team is clearly
+    first (control above PC_CUE_THRESHOLD) and can actually get there soon (its earliest arrival
+    within PC_CUE_REACH seconds): an interception or a won loose ball, not a long pass in the air.
+    """
+    t_home, t_away = arrival_times(ball, players, team)
+    control = _control(t_home, t_away)
+    thr = config.PC_CUE_THRESHOLD
+    cue = np.zeros((len(ball), 2))
+    with np.errstate(invalid="ignore"):
+        cue[:, 0] = np.clip((control - thr) / (1.0 - thr), 0.0, 1.0) * (t_home <= config.PC_CUE_REACH)
+        cue[:, 1] = np.clip((-control - thr) / (1.0 - thr), 0.0, 1.0) * (t_away <= config.PC_CUE_REACH)
+    cue[np.isnan(ball[:, 0])] = 0.0
+    return cue
 
 
 def handover_cue(ball, players, team):
