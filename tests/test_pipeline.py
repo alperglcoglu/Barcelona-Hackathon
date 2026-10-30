@@ -247,3 +247,14 @@ def test_min_duration_drops_a_short_weak_spell_but_keeps_a_strong_one():
         short = hmm.LETTERS[hmm.viterbi_min_duration(scores, COST, 50, 8.0)]
         assert "A" in plain
         assert ("A" in short) == kept
+
+
+def test_shift_changes_moves_boundaries_inside_each_half():
+    from possession import methods
+    labels = np.array(list("XXHHHAAAXXDDHHX"))
+    halves = [(2, 7), (10, 13)]
+    later = methods.shift_changes(labels, halves, 2)
+    assert "".join(later) == "XXHHHHHAXXDDDDX"
+    earlier = methods.shift_changes(labels, halves, -1)
+    assert "".join(earlier) == "XXHHAAAAXXDHHHX"
+    assert np.array_equal(methods.shift_changes(labels, halves, 0), labels)

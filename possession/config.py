@@ -176,3 +176,7 @@ VIDEO_BALL_BREAKS_GAPS = 1
 # DEAD_SPEED_RATIO of the match's pace, so a set piece with the ball in view still reads as a
 # stoppage. Needs VIDEO_BALL_BREAKS_GAPS = 1. Section 14.
 VIDEO_BALL_GAP_PACE = 0
+
+# -- boundary timing (methods.shift_changes, docs/TECHNICAL.md section 17) ---------------------
+# Frames by which every change of label is moved later (negative: earlier), after decoding. 0 = off.
+LABEL_SHIFT = 0

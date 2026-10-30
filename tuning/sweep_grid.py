@@ -53,10 +53,10 @@ def main(argv=None):
             macro = search.decode_score(scores, params, cases)[1]
             rows.append((params, result, total, macro))
             print("{}  spellF1 {:.4f}  macroF1 {:.3f}  short spells missed {:.0f}/{:.0f}  "
-                  "spurious {:.0f}".format(
+                  "spurious {:.0f}  latency {:+.2f} s".format(
                       "  ".join("{} {:g}".format(k, v) for k, v in params.items()),
                       total["spellF1"], macro, total["interrupt_missed"], total["interrupts"],
-                      total["spurious"]), flush=True)
+                      total["spurious"], total["latency"]), flush=True)
 
     games = sorted(rows[0][1])
     held = []
